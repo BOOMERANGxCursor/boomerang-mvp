@@ -26,7 +26,7 @@ Runtime verification used Node 24.22.2 and Bun 1.4.3; the system default Node is
 
 `bun run smoke:model` exited 1 with an explicit configuration blocker: neither `OPENAI_API_KEY` nor `DEMO_ACCESS_CODE` is configured. No provider request was made; model access and valid live output remain unproven. The repeatable server-side probe uses the fixed snapshot and validates exact source evidence when configured. No provider/model substitution was made.
 
-The [customer evidence](docs/customer-evidence.md), [pitch](docs/pitch.md) and [submission](docs/submission.md) working files are open. No conversations, deployment or submitted artifacts are claimed. Next: configure server credentials and run the probe, then implement Task 2's protected extraction path. Publication, practice evaluation, gap closure and persistence remain Tasks 3–5. This shell is explicitly temporary and does not read or write localStorage.
+The [customer evidence](docs/customer-evidence.md), [pitch](docs/pitch.md) and [submission](docs/submission.md) working files are open. Fictional paste-ready handover write-ups for a craft business and a Mittelstand workshop are in [doc/demo-cases](doc/demo-cases/README.md); the coded demo remains Demo Hall. No conversations, deployment or submitted artifacts are claimed. Next: configure server credentials and run the probe, then implement Task 2's protected extraction path. Publication, practice evaluation, gap closure and persistence remain Tasks 3–5. This shell is explicitly temporary and does not read or write localStorage.
 
 ## Customer evidence
 
