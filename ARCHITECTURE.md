@@ -21,7 +21,7 @@ This is the single source of truth for technology choices. Implement this stack.
 | Hosting | One Vercel project; Node.js server runtime | Deploy the app and extraction route together |
 | Optional audio | ElevenLabs HTTP speech-to-text API, `scribe_v2` | Transcribe a short recording into the existing text path |
 
-Exact installed package versions are not yet known: there is no application or lockfile. During Task 1, select compatible stable versions within these lines, use exact direct dependency pins, record the exact Node/Bun and SDK versions in the application README, and commit one `bun.lock`. Set `packageManager` to the resolved exact `bun@x.y.z` version and use `bun install --frozen-lockfile` on every teammate machine and deployment. Commit only `bun.lock` as the dependency lockfile. No `latest` ranges or unreviewed lockfile regeneration after this initial resolution. Audio model access is verified only if its optional gate is reached.
+Task 1 resolved exact compatible versions within these lines. [README.md](README.md#exact-bootstrap-versions) records the runtime, Bun and SDK versions; `package.json` pins direct dependencies and `bun.lock` records resolution. Commit the lockfile with the application when commits are requested. Use `bun install --frozen-lockfile` on every teammate machine and deployment. Commit only `bun.lock` as the dependency lockfile. No `latest` ranges or unreviewed lockfile regeneration after this initial resolution. Audio model access is verified only if its optional gate is reached.
 
 We chose one app over Next.js + separate API/database because all demo state fits in one browser and only extraction requires a server. There is no requirement for shared accounts or server-authoritative publication today. A production data model would be a separate approved change.
 
@@ -191,7 +191,7 @@ Deploy one tested build to Vercel with Node 24 and server-only environment varia
 
 ## 8. Planned commands
 
-Task 1 creates these scripts; they do not exist yet:
+Task 1 created these scripts:
 
 ```text
 bun run dev          next dev

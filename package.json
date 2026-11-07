@@ -1,0 +1,32 @@
+{
+  "name": "boomerang",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.3",
+  "engines": { "node": "24.x", "bun": "1.4.x" },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke:model": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/smoke-model.ts"
+  },
+  "dependencies": {
+    "next": "16.4.5",
+    "openai": "7.53.0",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.5",
+    "@types/node": "24.19.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "tailwindcss": "4.3.5",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}

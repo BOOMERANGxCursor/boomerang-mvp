@@ -6,7 +6,7 @@ Version 1.2.0 · Three people · Finish including pitch by 17:00, 7 November 202
 
 **Spec:** [PRD/SPEC.md](SPEC.md). **System contracts and fixed stack:** [ARCHITECTURE.md](../ARCHITECTURE.md). **Screens:** [DESIGN.md](../DESIGN.md).
 
-Agentic execution uses installed `superpowers:executing-plans` task by task. Checkboxes below represent future work. These documents do not scaffold the app.
+Agentic execution uses installed `superpowers:executing-plans` task by task. Checkboxes below track execution; [CONTEXT.md](../CONTEXT.md) records the evidence and blockers. The Task 1 application shell now exists in this checkout.
 
 ## Ownership and constraints
 
@@ -31,12 +31,14 @@ B owns contract changes and shares them before integration. F/B agree reducer ev
 **Files:** package/config/lock files, `contracts.ts`, `demo.ts`, `session.ts`, app layout/page, components.
 **Consumes:** PRD demo fixtures and architecture sections 1–4. **Produces:** shared types, initial bundle, three views and fixed dependency resolution.
 
-- [ ] B resolves compatible exact dependency versions within the frozen stack, records Node/Bun/SDK versions, sets the exact Bun packageManager version, creates the planned scripts and commits `bun.lock` when commits are requested. Teammates and deployment use `bun install --frozen-lockfile`.
-- [ ] B defines schemas/types and fixtures C1/C2/options exactly as specified. Initial bundle has S1 only and no draft/version/attempt/gap. Keep S2 and replay output out of active sources.
-- [ ] F implements the three-view shell, persistent mode/version/demo labels, reducer events and fixture adapter. Define pending-extraction tokens and hydration state outside the persisted bundle.
+- [x] B resolves compatible exact dependency versions within the frozen stack, records Node/Bun/SDK versions, sets the exact Bun packageManager version, creates the planned scripts and commits `bun.lock` when commits are requested. Teammates and deployment use `bun install --frozen-lockfile`.
+- [x] B defines schemas/types and fixtures C1/C2/options exactly as specified. Initial bundle has S1 only and no draft/version/attempt/gap. Keep S2 and replay output out of active sources.
+- [x] F implements the three-view shell, persistent mode/version/demo labels, reducer events and fixture adapter. Define pending-extraction tokens and hydration state outside the persisted bundle.
 - [ ] B smoke-tests the fixed model once with fictional text; validate a source quote. If credentials fail, record the blocker; F continues with labelled fixtures, without replacing the provider.
 - [ ] P opens `docs/customer-evidence.md`, `docs/pitch.md` and `docs/submission.md`; assigns names to F/B/P and begins actual conversations.
-- [ ] Verify `bun run typecheck` and `bun run build`; switch views with the initial fixture.
+- [x] Verify `bun run typecheck` and `bun run build`; switch views with the initial fixture.
+
+Task 1 software gate passed; provider probe explicitly blocked by missing server credentials. Working documents exist; actual customer conversations are not claimed. See [CONTEXT.md](../CONTEXT.md#task-1-validation) for executed checks and remaining work. No commit or push was requested.
 
 **Gate:** shared contracts compile; shell works; provider access is proven or explicitly blocked. Maps to W1.
 
