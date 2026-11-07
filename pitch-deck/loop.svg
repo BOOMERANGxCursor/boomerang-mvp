@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 340" fill="none" role="img" aria-labelledby="loopTitle">
+  <title id="loopTitle">Feedback loop from expert explanation back to the expert</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.2" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 1.1 9 5 0 8.9Z" fill="#4ea3ff"/>
+    </marker>
+  </defs>
+  <path d="M150 144 347 85" stroke="#4ea3ff" stroke-width="2.4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M390 84 587 143" stroke="#4ea3ff" stroke-width="2.4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M629 142 778 81" stroke="#4ea3ff" stroke-width="2.4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M800 94V226" stroke="#4ea3ff" stroke-width="2.4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M778 248H230" stroke="#4ea3ff" stroke-width="2.4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M214 242 145 170" stroke="#4ea3ff" stroke-width="2.4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <g>
+    <circle cx="130" cy="150" r="20" fill="#080f1d" stroke="#4ea3ff" stroke-width="2.6"/>
+    <circle cx="130" cy="150" r="6.5" fill="#4ea3ff"/>
+  </g>
+  <g>
+    <circle cx="370" cy="78" r="20" fill="#080f1d" stroke="#62e5ee" stroke-width="2.6"/>
+    <circle cx="370" cy="78" r="6.5" fill="#62e5ee"/>
+  </g>
+  <g>
+    <circle cx="610" cy="150" r="20" fill="#080f1d" stroke="#57dfb8" stroke-width="2.6"/>
+    <circle cx="610" cy="150" r="6.5" fill="#57dfb8"/>
+  </g>
+  <g>
+    <circle cx="800" cy="72" r="20" fill="#080f1d" stroke="#ffc078" stroke-width="2.6"/>
+    <circle cx="800" cy="72" r="6.5" fill="#ffc078"/>
+  </g>
+  <g>
+    <circle cx="800" cy="248" r="20" fill="#080f1d" stroke="#4ea3ff" stroke-width="2.6"/>
+    <circle cx="800" cy="248" r="6.5" fill="#4ea3ff"/>
+  </g>
+</svg>

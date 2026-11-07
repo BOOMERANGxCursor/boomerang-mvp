@@ -49,7 +49,7 @@ Demand, willingness to pay and learning improvement are unvalidated. €750 is a
 
 ## Event
 
-The [organizer page](https://luma.com/spacexai-tueh) requires a pitch deck, GitHub repo and viewable pitch/demo video of at most three minutes by 17:15. Judging: Problem & Customer, Product, Business Potential, Team & Pitch, 25% each. Finalists pitch later, five minutes plus three minutes Q&A. Our 17:00 finish protects submission buffer; it does not change stage time.
+The [organizer page](https://luma.com/spacexai-tueh) requires a pitch deck, GitHub repo and viewable pitch/demo video of at most three minutes by 17:15. An editable HTML version of the hackathon pitch PDF is in [pitch-deck](pitch-deck/index.html). Judging: Problem & Customer, Product, Business Potential, Team & Pitch, 25% each. Finalists pitch later, five minutes plus three minutes Q&A. Our 17:00 finish protects submission buffer; it does not change stage time.
 
 ## Sources and history
 
