@@ -1,59 +1,30 @@
 import { z } from "zod";
 
-const text = z.string().refine(value => value.trim().length > 0, "Must not be blank");
-const id = text;
-const version = z.number().int().positive();
-const unique = <T extends { id: string }>(items: T[]) => new Set(items.map(item => item.id)).size === items.length;
-
-export const SourceSegmentSchema = z.object({ id, text, author: text }).strict();
-export const EvidenceSchema = z.object({ sourceId: id, quote: text }).strict();
-export const RuleSchema = z.object({
-  id, situation: text, conditions: z.array(text), action: text,
-  rationale: text.nullable(), exceptions: z.array(text), evidence: z.array(EvidenceSchema).min(1),
-}).strict();
-export const CaseLinkSchema = z.object({ caseId: id, ruleId: id, reviewer: text }).strict();
-export const DraftSchema = z.object({
-  id, revision: z.number().int().nonnegative(), baseVersion: z.number().int().nonnegative(),
-  rules: z.array(RuleSchema).refine(unique, "Duplicate rule IDs"),
-  approvedRuleIds: z.array(id), caseLinks: z.array(CaseLinkSchema),
-}).strict();
-export const KnowledgeVersionSchema = z.object({
-  version, sources: z.array(SourceSegmentSchema).refine(unique, "Duplicate source IDs"),
-  rules: z.array(RuleSchema).min(1).refine(unique, "Duplicate rule IDs"),
-  caseLinks: z.array(CaseLinkSchema), approvedBy: text, approvedAt: z.iso.datetime(), contentOwner: text,
-}).strict();
-export const ScenarioSchema = z.object({
-  id, title: text, facts: z.array(text).min(1),
-  options: z.array(z.object({ id, label: text }).strict()).min(1).refine(unique, "Duplicate option IDs"),
-  correctOptionId: id,
-}).strict().refine(s => s.options.some(o => o.id === s.correctOptionId), "Unknown correct option");
-export const AttemptSchema = z.object({
-  id, scenarioId: id, knowledgeVersion: version, selectedOptionId: id.nullable(),
-  outcome: z.enum(["correct", "incorrect", "gap"]), ruleId: id.nullable(),
-}).strict();
-export const GapSchema = z.object({
-  id, scenarioId: id, fromVersion: version, question: text, owner: text,
-  status: z.enum(["open", "closed"]), resolvedVersion: version.nullable(),
-}).strict();
-export const SessionBundleSchema = z.object({
-  schemaVersion: z.literal(1), mode: z.enum(["live", "fixture"]),
-  sources: z.array(SourceSegmentSchema).refine(unique, "Duplicate source IDs"),
-  draft: DraftSchema.nullable(), versions: z.array(KnowledgeVersionSchema),
-  attempts: z.array(AttemptSchema).refine(unique, "Duplicate attempt IDs"),
-  gaps: z.array(GapSchema).refine(unique, "Duplicate gap IDs"),
-}).strict();
-export const ExtractionResultSchema = z.object({
-  rules: z.array(RuleSchema).max(6).refine(unique, "Duplicate rule IDs"), questions: z.array(text).max(3),
-}).strict();
-
+export const Nonblank = z.string().refine(v => v.trim().length > 0, "Must not be blank");
+const uid = Nonblank;
+const unique = <T extends {id:string}>(items:T[]) => new Set(items.map(x=>x.id)).size === items.length;
+export const DatasetIdSchema = z.enum(["keller-elektro", "nordform"]);
+export const ProfileSchema = z.object({name:z.string(),position:z.string(),organization:z.string(),experience:z.number().min(0).max(100).nullable(),owner:z.string()}).strict();
+export const SourceSegmentSchema = z.object({id:uid,text:Nonblank,author:Nonblank,name:z.string().optional(),kind:z.enum(["text","document","image","audio","video"]).optional(),active:z.boolean().optional(),warnings:z.array(z.string()).optional()}).strict();
+export const EvidenceSchema = z.object({sourceId:uid,quote:Nonblank}).strict();
+export const RuleSchema = z.object({id:uid,situation:Nonblank,conditions:z.array(Nonblank),action:Nonblank,rationale:Nonblank.nullable(),exceptions:z.array(Nonblank),evidence:z.array(EvidenceSchema).min(1)}).strict();
+export const ExtractionResultSchema = z.object({origin:z.enum(["live","example"]).default("live"),rules:z.array(RuleSchema).max(6).refine(unique),questions:z.array(Nonblank).max(3)}).strict();
+export const SnippetSchema = z.object({id:uid,rule:RuleSchema,revision:z.number().int().nonnegative(),approvedRevision:z.number().int().nonnegative().nullable(),status:z.enum(["pending","correction","revised","approved","excluded"])}).strict();
+export const QuestionSchema = z.object({id:uid,text:Nonblank,answer:z.string(),status:z.enum(["open","draft","accepted"]),origin:z.enum(["extraction","expert","scenario","example"]).optional(),sourceIds:z.array(uid).optional(),fromRevision:z.number().int().nonnegative().optional(),scenarioId:uid.optional(),revision:z.number().int().nonnegative(),approvedRevision:z.number().int().nonnegative().nullable()}).strict();
+export const ScenarioSchema = z.object({id:uid,title:Nonblank,facts:z.array(Nonblank).min(1),options:z.array(z.object({id:uid,label:Nonblank}).strict()).length(3).refine(unique),correctOptionId:uid,ruleId:uid.nullable(),approved:z.boolean()}).strict().refine(s=>s.options.some(o=>o.id===s.correctOptionId),"Unknown answer choice");
+export const AttemptSchema = z.object({id:uid,scenarioId:uid,captureRevision:z.number().int().nonnegative(),selectedOptionId:uid.nullable(),outcome:z.enum(["correct","incorrect","gap"]),ruleId:uid.nullable(),scenario:ScenarioSchema,rule:RuleSchema.nullable()}).strict();
+export const ComparisonSchema = z.object({previousId:uid,ruleId:uid,decision:z.enum(["keep","new","combine","different"])}).strict();
+export const CaptureSchema = z.object({id:uid,revision:z.number().int().nonnegative(),datasetId:DatasetIdSchema.nullable(),origin:z.enum(["live","example"]).default("live"),profile:ProfileSchema,step:z.number().int().min(0).max(5),sources:z.array(SourceSegmentSchema).refine(unique),snippets:z.array(SnippetSchema).refine(unique),questions:z.array(QuestionSchema).refine(unique),scenarios:z.array(ScenarioSchema).refine(unique),attempts:z.array(AttemptSchema).refine(unique),comparisons:z.array(ComparisonSchema),comparisonComplete:z.boolean()}).strict();
+export const PublishedMemorySchema = z.object({id:uid,version:z.number().int().positive(),captureId:uid,revision:z.number().int().nonnegative(),datasetId:DatasetIdSchema.nullable(),profile:ProfileSchema,sources:z.array(SourceSegmentSchema).refine(unique),rules:z.array(RuleSchema).min(1).refine(unique),questions:z.array(QuestionSchema),scenarios:z.array(ScenarioSchema),publishedAt:z.iso.datetime(),previousId:uid.nullable()}).strict();
+export const WorkspaceSchema = z.object({schemaVersion:z.literal(2),capture:CaptureSchema,publications:z.array(PublishedMemorySchema).refine(unique)}).strict();
+export type DatasetId = z.infer<typeof DatasetIdSchema>;
+export type Profile = z.infer<typeof ProfileSchema>;
 export type SourceSegment = z.infer<typeof SourceSegmentSchema>;
-export type Evidence = z.infer<typeof EvidenceSchema>;
 export type Rule = z.infer<typeof RuleSchema>;
-export type CaseLink = z.infer<typeof CaseLinkSchema>;
-export type Draft = z.infer<typeof DraftSchema>;
-export type KnowledgeVersion = z.infer<typeof KnowledgeVersionSchema>;
-export type Scenario = z.infer<typeof ScenarioSchema>;
-export type Attempt = z.infer<typeof AttemptSchema>;
-export type Gap = z.infer<typeof GapSchema>;
-export type SessionBundle = z.infer<typeof SessionBundleSchema>;
 export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
+export type Snippet = z.infer<typeof SnippetSchema>;
+export type Question = z.infer<typeof QuestionSchema>;
+export type Scenario = z.infer<typeof ScenarioSchema>;
+export type Capture = z.infer<typeof CaptureSchema>;
+export type PublishedMemory = z.infer<typeof PublishedMemorySchema>;
+export type Workspace = z.infer<typeof WorkspaceSchema>;

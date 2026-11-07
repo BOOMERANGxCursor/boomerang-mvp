@@ -35,179 +35,26 @@ This is a demo architecture, not a production knowledge platform. A production p
 
 **Decision A002:** user requested Bun instead of npm. All other fixed choices remain unchanged. Exact dependency pins are established once in Task 1; architecture changes still require explicit approval.
 
-## 2. Boundaries
+## 2. Guided capture baseline — A003
 
-```mermaid
-flowchart LR
-  UI[Capture / Review / Practise] --> State[Session reducer]
-  State <--> Storage[Validated localStorage bundle]
-  UI --> API[POST /api/extract]
-  API --> Model[OpenAI structured extraction]
-  Model --> Checks[Schema + evidence validation]
-  Checks --> UI
-  State --> Domain[Approval / publication / evaluation]
-```
+The user approved the guided-capture redesign in [PRD/EXPERT-CAPTURE-DESIGN.md](PRD/EXPERT-CAPTURE-DESIGN.md). This supersedes the v1 Demo Hall workflow and bundle contracts below the stack freeze. Media input is required, video means spoken content only, and tests use short scenarios with answer choices. No new dependencies or provider substitutions are authorized or needed.
 
-Browser: editing, explicit approvals, case links, snapshots, practice, gaps and persistence. Server: demo-access check, input limits, provider call, output/evidence validation. Model: propose draft content only. No database, retrieval pipeline, agents, additional backend or external messaging.
+## 3. Version-2 contracts
 
-The demo access code protects paid model calls; it is not enterprise authentication. Browser snapshots are not a tamper-proof audit log. Only fictional inputs are allowed in this prototype.
+`src/lib/contracts.ts` owns runtime schemas and inferred types. The version-2 workspace contains one editable capture and immutable published memories. Captures contain a profile, opt-in dataset ID, source segments, revision-bound snippets, expert questions, scenarios, attempts and previous-memory comparison decisions. Sources are append-only; corrections/additions create new expert-authored sources. Snippet approval binds its exact revision. Edited questions/scenarios clear their acceptance and invalidate test readiness. Persist no credentials, raw files, promises or pending tokens.
 
-## 3. Planned application files
+`memory.ts` owns evidence checks, approvals, revisions, scenario validation/evaluation, prior-memory matching and publication. `session.ts` owns pure UI transitions and request context. `storage.ts` validates complete JSON and cross-references before restoration; corrupt/old data goes to recovery rather than being overwritten. The localStorage key is `boomerang.workspace.v2`; the old `boomerang.demo.v1` key is never silently overwritten.
 
-Paths are relative to the application repository root. If the application is built in another checkout, copy the current documentation set to its root first; do not interpret this planning repository's name as an application directory contract.
+Only same-organization, same-position memories in the same dataset/live context are predecessor candidates. A human confirms use-case applicability and resolves differences. Prior snapshots remain unchanged. A successful manual scenario attempt must match the current capture revision before publication. Open questions/uncovered use cases stay visibly open and never gain guessed answers.
 
-```text
-src/app/layout.tsx                 metadata and global styling
-src/app/page.tsx                   session shell, restoration and view switching
-src/app/globals.css                design tokens and Tailwind import
-src/app/api/extract/route.ts       access, limits, request/response handling
-src/components/Capture.tsx         incident editor and expert inbox
-src/components/Review.tsx          cards, evidence, links and publication
-src/components/Practise.tsx        playbook, cases, feedback and history
-src/lib/contracts.ts               Zod schemas and inferred types
-src/lib/demo.ts                    initial bundle and separate replay fixtures
-src/lib/extract.ts                 provider adapter and evidence validation
-src/lib/knowledge.ts               edit, reject, approve, link, publish
-src/lib/practice.ts                evaluate, create/deduplicate/resolve gaps
-src/lib/session.ts                 reducer and pending-extraction context
-src/lib/storage.ts                 validated load/save/reset
-tests/extract.test.ts              adapter, evidence and API failures
-tests/knowledge.test.ts            approvals, links and immutable versions
-tests/practice.test.ts             coverage, choices, gaps and replay
-tests/storage.test.ts              persistence, corruption and hydration guards
-README.md                         actual setup, versions and demonstration limits
-.env.example                      variable names only
-package.json / bun.lock  scripts and exact dependency resolution
-```
+## 4. Server boundaries
 
-Optional: `/api/transcribe/route.ts` and `src/lib/transcribe.ts` only after the text acceptance gate passes.
+Next Node routes `/api/read`, `/api/extract` and `/api/scenarios` use the same server-only `DEMO_ACCESS_CODE` check (`x-demo-access`) before paid provider work. Missing configuration: 503; unauthorized: 401; invalid input: 400; oversized: 413; provider/refusal/malformed evidence: 502; timeout: 504. Errors are sanitized `{code,message}`. Use a 20-second timeout, no automatic retries and explicit UI retry.
 
-## 4. Shared data contract
+Read one binary/multipart file per request, max 4 MB plus bounded multipart overhead. Validate supported extensions/content type and binary signatures, not filename alone. Browser text reading supports TXT/MD/CSV/SRT/VTT. OpenAI reads PDF/DOCX and JPEG/PNG/WebP using the pinned snapshot; ElevenLabs HTTP `scribe_v2` transcribes audio/video speech. Clips are limited to 60 seconds. Normalized text is inspectable/editable before extraction. No arbitrary URL fetching and no raw media persistence.
 
-Define each type through a Zod schema; infer TypeScript types. Runtime validation is required at API and storage boundaries. IDs are app-generated UUIDs except stable fixture IDs.
+Extraction accepts 1–6 immutable sources, max 10,000 total characters and 64 KiB JSON. Return at most six proposed rules and three questions. App-generate IDs, enforce exact nonempty quotes and known source IDs. Scenario proposals (max three, three choices each) need human approval of the answer key and rule applicability before testing. Model text and uploads cannot approve/publish. OpenAI uses Responses strict structured output, `store:false`, reasoning `none` and the fixed model.
 
-```ts
-type SourceSegment = { id: string; text: string; author: string };
-type Evidence = { sourceId: string; quote: string };
-type Rule = {
-  id: string; situation: string; conditions: string[]; action: string;
-  rationale: string | null; exceptions: string[]; evidence: Evidence[];
-};
-type CaseLink = { caseId: string; ruleId: string; reviewer: string };
-type Draft = {
-  id: string; revision: number; baseVersion: number;
-  rules: Rule[]; approvedRuleIds: string[]; caseLinks: CaseLink[];
-};
-type KnowledgeVersion = {
-  version: number; sources: SourceSegment[]; rules: Rule[];
-  caseLinks: CaseLink[]; approvedBy: string; approvedAt: string;
-  contentOwner: string;
-};
-type Scenario = {
-  id: string; title: string; facts: string[];
-  options: { id: string; label: string }[]; correctOptionId: string;
-};
-type Attempt = {
-  id: string; scenarioId: string; knowledgeVersion: number;
-  selectedOptionId: string | null; outcome: 'correct' | 'incorrect' | 'gap';
-  ruleId: string | null;
-};
-type Gap = {
-  id: string; scenarioId: string; fromVersion: number; question: string;
-  owner: string; status: 'open' | 'closed'; resolvedVersion: number | null;
-};
-type SessionBundle = {
-  schemaVersion: 1; mode: 'live' | 'fixture';
-  sources: SourceSegment[]; draft: Draft | null;
-  versions: KnowledgeVersion[]; attempts: Attempt[]; gaps: Gap[];
-};
-```
+## 5. Runtime and validation
 
-Expert/owner form fields and pending request context may live in temporary reducer state; publication/creation copies the required names into snapshots/gaps. They do not authorize access. Credentials and pending promises are never stored in `SessionBundle`.
-
-Sources are append-only within a session. Editing an already submitted source creates a new ID. Every rule needs at least one nonempty quote matching its referenced source exactly. Reject unknown/duplicate IDs, blank actions/situations and invalid references. Cards whose evidence is syntactically valid still require semantic review.
-
-## 5. Domain functions
-
-```ts
-validateEvidence(rules: Rule[], sources: SourceSegment[]): void
-extractRules(sources: SourceSegment[]): Promise<{ rules: Rule[]; questions: string[] }>
-editRule(draft: Draft, updated: Rule): Draft
-rejectRule(draft: Draft, ruleId: string): Draft
-approveRule(draft: Draft, ruleId: string): Draft
-approveCaseLink(draft: Draft, scenario: Scenario, ruleId: string, reviewer: string): Draft
-publishDraft(input: {
-  draft: Draft; expectedDraftId: string; expectedRevision: number;
-  current: KnowledgeVersion | null; sources: SourceSegment[];
-  reviewer: string; contentOwner: string; now: string;
-}): KnowledgeVersion
-evaluateCase(scenario: Scenario, selectedOptionId: string | null,
-  knowledge: KnowledgeVersion): Attempt
-createGap(scenario: Scenario, version: KnowledgeVersion): Gap
-resolveGap(gap: Gap, knowledge: KnowledgeVersion): Gap
-loadBundle(): SessionBundle | null
-saveBundle(bundle: SessionBundle): { persisted: boolean }
-resetBundle(): SessionBundle
-```
-
-**Drafts:** mutations return copies and increment revision. Edit/reject clears that rule's approval and links. Link only an existing approved rule, known case and nonempty reviewer. Reject a second link; remove the first explicitly before replacing it. An update draft copies the current version's cards/links and retains approvals for unchanged cards; its `baseVersion` is the current version number.
-
-**Publish:** the reducer passes its current draft to `publishDraft` and the click's captured ID/revision as expected values. Reject mismatches and a `baseVersion` unequal to `current?.version ?? 0`. Validate nonempty rules, all approvals, evidence, unique valid case links, reviewer and owner. Create `(current?.version ?? 0) + 1` as a deep copy; source snapshot includes all references. Append it rather than replacing history. These guards protect normal single-browser state flow, not multi-user concurrency.
-
-**Practice:** coverage is checked first. No link or conflicting links → `gap`, with no selected option or recommendation. Valid link + null selection is a validation error, not a saved attempt. An unknown option is rejected and cannot pass. Exact match with `correctOptionId` → `correct`; another known option → `incorrect`. The UI supplies only C1/C2; reject unknown scenario IDs before resolution. Use the linked rule for feedback.
-
-**Gaps:** create question from fixed case facts, copy `contentOwner`, and deduplicate by case/version in the reducer. Resolve only if a newer published snapshot contains a valid link for that case. A reply, draft approval or same-version snapshot cannot resolve it. Old attempts remain unchanged. All v1/v2 operations follow PRD W1–W10.
-
-**Async results:** record pending draft ID/revision (or null when starting a new draft) and a request token. Commit extraction only if the current draft still matches that context and the token is current. Ignore an older/late result; preserve new edits. Disable overlapping extraction in the UI. Reset invalidates pending tokens so a late response cannot repopulate a cleared session.
-
-## 6. API and provider contract
-
-`POST /api/extract`, JSON `{ sources: SourceSegment[] }` → `{ rules: Rule[]; questions: string[] }`. Require `x-demo-access` matching server-only `DEMO_ACCESS_CODE`; compare before provider work. Missing server configuration returns 503 without a provider call.
-
-Bounds: 64 KiB UTF-8 request body, 10,000 total source characters, 1–6 nonempty input segments. Check bytes before parsing and schema/character limits after. Return at most six rules and three questions; a valid zero-rule result is allowed. Set a 20-second abort timeout and SDK automatic retries to zero. UI offers one explicit retry per failed extraction cycle. No silent model substitution.
-
-Use the fixed snapshot with reasoning effort `none`, a strict structured-output schema and `store: false`. Prompt for source-supported decisions, original conditions, missing rationale as null and exact quotes. Do not give the model tools, approval fields or publication functions. Validate the complete response and evidence before returning any rules. An incomplete/refused/provider-error result is an error, not empty successful extraction.
-
-| Status | Meaning |
-| --- | --- |
-| 400 | Invalid schema, empty input, duplicate IDs or character/segment limit |
-| 401 | Missing or incorrect demo access code |
-| 413 | Body exceeds byte limit |
-| 502 | Refusal, malformed/incomplete output, invalid evidence or provider error |
-| 503 | Live extraction not configured |
-| 504 | Provider timeout |
-
-Errors: `{ code: string; message: string }`; never expose raw provider messages or credentials. Keep API key and access code in server environment variables. Browser access code stays in memory and is re-entered after reload.
-
-Optional transcription: server-only `ELEVENLABS_API_KEY`, same access check, at most 60 seconds/5 MiB, 20-second timeout, model `scribe_v2`, one supported browser-recorded format verified before enabling. Send via HTTP without adding another SDK. Correct the returned transcript in Capture before extraction; raw audio is not persisted. If model/format support is unavailable, omit audio; changing provider/model still requires approval.
-
-## 7. Persistence and operations
-
-Key: `boomerang.demo.v1`. Validate schema and cross-references: unique IDs/version numbers, quotes, draft approvals/links, attempt versions/rules and gap resolution links. Reject corrupt bundles into recovery UI. A load error differs from no saved bundle. During hydration, do not save defaults. Storage failure keeps memory state with a visible notice.
-
-Reset replaces in-memory and saved state with `initialBundle`, invalidates pending requests, and leaves S1 only. Export JSON is optional, not an acceptance requirement. A fixture replay bundle is separate from initial/live state and permanently labelled; it may include S2/v2 for fallback playback. Switching modes must not mix fixture rules into live history.
-
-Deploy one tested build to Vercel with Node 24 and server-only environment variables. Check missing/wrong access, a real novel extraction, full loop, reload/reset and a signed-out fixture experience. Disable paid live access after judging. No CI pipeline is required to prove the demo; a tested manual deployment is sufficient.
-
-## 8. Planned commands
-
-Task 1 created these scripts:
-
-```text
-bun run dev          next dev
-bun run build        next build
-bun run start        next start
-bun run typecheck    tsc --noEmit
-bun run test         vitest run
-```
-
-For domain changes, run the affected test file. For integration/release, run all tests, typecheck, build and the PRD acceptance flow in the presentation browser.
-
-## 9. Technical references
-
-- [Next.js 16](https://nextjs.org/blog/next-16), [Node.js release lines](https://nodejs.org/en/about/previous-releases), [Bun lockfiles](https://bun.sh/docs/pm/lockfile), [Bun with Next.js](https://bun.sh/guides/ecosystem/nextjs), [Tailwind with Next.js](https://tailwindcss.com/docs/installation/framework-guides/nextjs).
-- [Zod](https://zod.dev/), [Vitest 4](https://v4.vitest.dev/guide/).
-- [OpenAI SDK](https://github.com/openai/openai-node), [pinned model and structured-output support](https://developers.openai.com/api/docs/models/gpt-5.4-mini).
-- [ElevenLabs speech-to-text models](https://elevenlabs.io/docs/overview/models).
-
-Documentation confirms advertised capabilities, not access through the team's account. The live provider smoke test remains required.
+Continue using the exact Node/Bun/dependency versions in [README.md](README.md), only `bun.lock`, and `bun install --frozen-lockfile`. Scripts remain dev/build/start/typecheck/test plus the server model smoke probe. Domain and adapter changes require regression tests; release verification requires all tests, typecheck, production build and a desktop/mobile operator run. Provider access is only proven by real credential-backed smoke tests.

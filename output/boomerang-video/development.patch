@@ -1,0 +1,1598 @@
+diff --git a/.env.example b/.env.example
+index 276e7d4..53beeab 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,2 +1,3 @@
+ OPENAI_API_KEY=
+ DEMO_ACCESS_CODE=
++ELEVENLABS_API_KEY=
+diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
+index 6d5501b..8c6cd69 100644
+--- a/ARCHITECTURE.md
++++ b/ARCHITECTURE.md
+@@ -35,179 +35,26 @@ This is a demo architecture, not a production knowledge platform. A production p
+ 
+ **Decision A002:** user requested Bun instead of npm. All other fixed choices remain unchanged. Exact dependency pins are established once in Task 1; architecture changes still require explicit approval.
+ 
+-## 2. Boundaries
+-
+-```mermaid
+-flowchart LR
+-  UI[Capture / Review / Practise] --> State[Session reducer]
+-  State <--> Storage[Validated localStorage bundle]
+-  UI --> API[POST /api/extract]
+-  API --> Model[OpenAI structured extraction]
+-  Model --> Checks[Schema + evidence validation]
+-  Checks --> UI
+-  State --> Domain[Approval / publication / evaluation]
+-```
+-
+-Browser: editing, explicit approvals, case links, snapshots, practice, gaps and persistence. Server: demo-access check, input limits, provider call, output/evidence validation. Model: propose draft content only. No database, retrieval pipeline, agents, additional backend or external messaging.
+-
+-The demo access code protects paid model calls; it is not enterprise authentication. Browser snapshots are not a tamper-proof audit log. Only fictional inputs are allowed in this prototype.
+-
+-## 3. Planned application files
+-
+-Paths are relative to the application repository root. If the application is built in another checkout, copy the current documentation set to its root first; do not interpret this planning repository's name as an application directory contract.
+-
+-```text
+-src/app/layout.tsx                 metadata and global styling
+-src/app/page.tsx                   session shell, restoration and view switching
+-src/app/globals.css                design tokens and Tailwind import
+-src/app/api/extract/route.ts       access, limits, request/response handling
+-src/components/Capture.tsx         incident editor and expert inbox
+-src/components/Review.tsx          cards, evidence, links and publication
+-src/components/Practise.tsx        playbook, cases, feedback and history
+-src/lib/contracts.ts               Zod schemas and inferred types
+-src/lib/demo.ts                    initial bundle and separate replay fixtures
+-src/lib/extract.ts                 provider adapter and evidence validation
+-src/lib/knowledge.ts               edit, reject, approve, link, publish
+-src/lib/practice.ts                evaluate, create/deduplicate/resolve gaps
+-src/lib/session.ts                 reducer and pending-extraction context
+-src/lib/storage.ts                 validated load/save/reset
+-tests/extract.test.ts              adapter, evidence and API failures
+-tests/knowledge.test.ts            approvals, links and immutable versions
+-tests/practice.test.ts             coverage, choices, gaps and replay
+-tests/storage.test.ts              persistence, corruption and hydration guards
+-README.md                         actual setup, versions and demonstration limits
+-.env.example                      variable names only
+-package.json / bun.lock  scripts and exact dependency resolution
+-```
+-
+-Optional: `/api/transcribe/route.ts` and `src/lib/transcribe.ts` only after the text acceptance gate passes.
+-
+-## 4. Shared data contract
+-
+-Define each type through a Zod schema; infer TypeScript types. Runtime validation is required at API and storage boundaries. IDs are app-generated UUIDs except stable fixture IDs.
+-
+-```ts
+-type SourceSegment = { id: string; text: string; author: string };
+-type Evidence = { sourceId: string; quote: string };
+-type Rule = {
+-  id: string; situation: string; conditions: string[]; action: string;
+-  rationale: string | null; exceptions: string[]; evidence: Evidence[];
+-};
+-type CaseLink = { caseId: string; ruleId: string; reviewer: string };
+-type Draft = {
+-  id: string; revision: number; baseVersion: number;
+-  rules: Rule[]; approvedRuleIds: string[]; caseLinks: CaseLink[];
+-};
+-type KnowledgeVersion = {
+-  version: number; sources: SourceSegment[]; rules: Rule[];
+-  caseLinks: CaseLink[]; approvedBy: string; approvedAt: string;
+-  contentOwner: string;
+-};
+-type Scenario = {
+-  id: string; title: string; facts: string[];
+-  options: { id: string; label: string }[]; correctOptionId: string;
+-};
+-type Attempt = {
+-  id: string; scenarioId: string; knowledgeVersion: number;
+-  selectedOptionId: string | null; outcome: 'correct' | 'incorrect' | 'gap';
+-  ruleId: string | null;
+-};
+-type Gap = {
+-  id: string; scenarioId: string; fromVersion: number; question: string;
+-  owner: string; status: 'open' | 'closed'; resolvedVersion: number | null;
+-};
+-type SessionBundle = {
+-  schemaVersion: 1; mode: 'live' | 'fixture';
+-  sources: SourceSegment[]; draft: Draft | null;
+-  versions: KnowledgeVersion[]; attempts: Attempt[]; gaps: Gap[];
+-};
+-```
+-
+-Expert/owner form fields and pending request context may live in temporary reducer state; publication/creation copies the required names into snapshots/gaps. They do not authorize access. Credentials and pending promises are never stored in `SessionBundle`.
+-
+-Sources are append-only within a session. Editing an already submitted source creates a new ID. Every rule needs at least one nonempty quote matching its referenced source exactly. Reject unknown/duplicate IDs, blank actions/situations and invalid references. Cards whose evidence is syntactically valid still require semantic review.
+-
+-## 5. Domain functions
+-
+-```ts
+-validateEvidence(rules: Rule[], sources: SourceSegment[]): void
+-extractRules(sources: SourceSegment[]): Promise<{ rules: Rule[]; questions: string[] }>
+-editRule(draft: Draft, updated: Rule): Draft
+-rejectRule(draft: Draft, ruleId: string): Draft
+-approveRule(draft: Draft, ruleId: string): Draft
+-approveCaseLink(draft: Draft, scenario: Scenario, ruleId: string, reviewer: string): Draft
+-publishDraft(input: {
+-  draft: Draft; expectedDraftId: string; expectedRevision: number;
+-  current: KnowledgeVersion | null; sources: SourceSegment[];
+-  reviewer: string; contentOwner: string; now: string;
+-}): KnowledgeVersion
+-evaluateCase(scenario: Scenario, selectedOptionId: string | null,
+-  knowledge: KnowledgeVersion): Attempt
+-createGap(scenario: Scenario, version: KnowledgeVersion): Gap
+-resolveGap(gap: Gap, knowledge: KnowledgeVersion): Gap
+-loadBundle(): SessionBundle | null
+-saveBundle(bundle: SessionBundle): { persisted: boolean }
+-resetBundle(): SessionBundle
+-```
+-
+-**Drafts:** mutations return copies and increment revision. Edit/reject clears that rule's approval and links. Link only an existing approved rule, known case and nonempty reviewer. Reject a second link; remove the first explicitly before replacing it. An update draft copies the current version's cards/links and retains approvals for unchanged cards; its `baseVersion` is the current version number.
+-
+-**Publish:** the reducer passes its current draft to `publishDraft` and the click's captured ID/revision as expected values. Reject mismatches and a `baseVersion` unequal to `current?.version ?? 0`. Validate nonempty rules, all approvals, evidence, unique valid case links, reviewer and owner. Create `(current?.version ?? 0) + 1` as a deep copy; source snapshot includes all references. Append it rather than replacing history. These guards protect normal single-browser state flow, not multi-user concurrency.
+-
+-**Practice:** coverage is checked first. No link or conflicting links → `gap`, with no selected option or recommendation. Valid link + null selection is a validation error, not a saved attempt. An unknown option is rejected and cannot pass. Exact match with `correctOptionId` → `correct`; another known option → `incorrect`. The UI supplies only C1/C2; reject unknown scenario IDs before resolution. Use the linked rule for feedback.
+-
+-**Gaps:** create question from fixed case facts, copy `contentOwner`, and deduplicate by case/version in the reducer. Resolve only if a newer published snapshot contains a valid link for that case. A reply, draft approval or same-version snapshot cannot resolve it. Old attempts remain unchanged. All v1/v2 operations follow PRD W1–W10.
+-
+-**Async results:** record pending draft ID/revision (or null when starting a new draft) and a request token. Commit extraction only if the current draft still matches that context and the token is current. Ignore an older/late result; preserve new edits. Disable overlapping extraction in the UI. Reset invalidates pending tokens so a late response cannot repopulate a cleared session.
+-
+-## 6. API and provider contract
+-
+-`POST /api/extract`, JSON `{ sources: SourceSegment[] }` → `{ rules: Rule[]; questions: string[] }`. Require `x-demo-access` matching server-only `DEMO_ACCESS_CODE`; compare before provider work. Missing server configuration returns 503 without a provider call.
+-
+-Bounds: 64 KiB UTF-8 request body, 10,000 total source characters, 1–6 nonempty input segments. Check bytes before parsing and schema/character limits after. Return at most six rules and three questions; a valid zero-rule result is allowed. Set a 20-second abort timeout and SDK automatic retries to zero. UI offers one explicit retry per failed extraction cycle. No silent model substitution.
+-
+-Use the fixed snapshot with reasoning effort `none`, a strict structured-output schema and `store: false`. Prompt for source-supported decisions, original conditions, missing rationale as null and exact quotes. Do not give the model tools, approval fields or publication functions. Validate the complete response and evidence before returning any rules. An incomplete/refused/provider-error result is an error, not empty successful extraction.
+-
+-| Status | Meaning |
+-| --- | --- |
+-| 400 | Invalid schema, empty input, duplicate IDs or character/segment limit |
+-| 401 | Missing or incorrect demo access code |
+-| 413 | Body exceeds byte limit |
+-| 502 | Refusal, malformed/incomplete output, invalid evidence or provider error |
+-| 503 | Live extraction not configured |
+-| 504 | Provider timeout |
+-
+-Errors: `{ code: string; message: string }`; never expose raw provider messages or credentials. Keep API key and access code in server environment variables. Browser access code stays in memory and is re-entered after reload.
+-
+-Optional transcription: server-only `ELEVENLABS_API_KEY`, same access check, at most 60 seconds/5 MiB, 20-second timeout, model `scribe_v2`, one supported browser-recorded format verified before enabling. Send via HTTP without adding another SDK. Correct the returned transcript in Capture before extraction; raw audio is not persisted. If model/format support is unavailable, omit audio; changing provider/model still requires approval.
+-
+-## 7. Persistence and operations
+-
+-Key: `boomerang.demo.v1`. Validate schema and cross-references: unique IDs/version numbers, quotes, draft approvals/links, attempt versions/rules and gap resolution links. Reject corrupt bundles into recovery UI. A load error differs from no saved bundle. During hydration, do not save defaults. Storage failure keeps memory state with a visible notice.
+-
+-Reset replaces in-memory and saved state with `initialBundle`, invalidates pending requests, and leaves S1 only. Export JSON is optional, not an acceptance requirement. A fixture replay bundle is separate from initial/live state and permanently labelled; it may include S2/v2 for fallback playback. Switching modes must not mix fixture rules into live history.
+-
+-Deploy one tested build to Vercel with Node 24 and server-only environment variables. Check missing/wrong access, a real novel extraction, full loop, reload/reset and a signed-out fixture experience. Disable paid live access after judging. No CI pipeline is required to prove the demo; a tested manual deployment is sufficient.
+-
+-## 8. Planned commands
+-
+-Task 1 created these scripts:
+-
+-```text
+-bun run dev          next dev
+-bun run build        next build
+-bun run start        next start
+-bun run typecheck    tsc --noEmit
+-bun run test         vitest run
+-```
++## 2. Guided capture baseline — A003
+ 
+-For domain changes, run the affected test file. For integration/release, run all tests, typecheck, build and the PRD acceptance flow in the presentation browser.
++The user approved the guided-capture redesign in [PRD/EXPERT-CAPTURE-DESIGN.md](PRD/EXPERT-CAPTURE-DESIGN.md). This supersedes the v1 Demo Hall workflow and bundle contracts below the stack freeze. Media input is required, video means spoken content only, and tests use short scenarios with answer choices. No new dependencies or provider substitutions are authorized or needed.
+ 
+-## 9. Technical references
++## 3. Version-2 contracts
+ 
+-- [Next.js 16](https://nextjs.org/blog/next-16), [Node.js release lines](https://nodejs.org/en/about/previous-releases), [Bun lockfiles](https://bun.sh/docs/pm/lockfile), [Bun with Next.js](https://bun.sh/guides/ecosystem/nextjs), [Tailwind with Next.js](https://tailwindcss.com/docs/installation/framework-guides/nextjs).
+-- [Zod](https://zod.dev/), [Vitest 4](https://v4.vitest.dev/guide/).
+-- [OpenAI SDK](https://github.com/openai/openai-node), [pinned model and structured-output support](https://developers.openai.com/api/docs/models/gpt-5.4-mini).
+-- [ElevenLabs speech-to-text models](https://elevenlabs.io/docs/overview/models).
++`src/lib/contracts.ts` owns runtime schemas and inferred types. The version-2 workspace contains one editable capture and immutable published memories. Captures contain a profile, opt-in dataset ID, source segments, revision-bound snippets, expert questions, scenarios, attempts and previous-memory comparison decisions. Sources are append-only; corrections/additions create new expert-authored sources. Snippet approval binds its exact revision. Edited questions/scenarios clear their acceptance and invalidate test readiness. Persist no credentials, raw files, promises or pending tokens.
+ 
+-Documentation confirms advertised capabilities, not access through the team's account. The live provider smoke test remains required.
++`memory.ts` owns evidence checks, approvals, revisions, scenario validation/evaluation, prior-memory matching and publication. `session.ts` owns pure UI transitions and request context. `storage.ts` validates complete JSON and cross-references before restoration; corrupt/old data goes to recovery rather than being overwritten. The localStorage key is `boomerang.workspace.v2`; the old `boomerang.demo.v1` key is never silently overwritten.
++
++Only same-organization, same-position memories in the same dataset/live context are predecessor candidates. A human confirms use-case applicability and resolves differences. Prior snapshots remain unchanged. A successful manual scenario attempt must match the current capture revision before publication. Open questions/uncovered use cases stay visibly open and never gain guessed answers.
++
++## 4. Server boundaries
++
++Next Node routes `/api/read`, `/api/extract` and `/api/scenarios` use the same server-only `DEMO_ACCESS_CODE` check (`x-demo-access`) before paid provider work. Missing configuration: 503; unauthorized: 401; invalid input: 400; oversized: 413; provider/refusal/malformed evidence: 502; timeout: 504. Errors are sanitized `{code,message}`. Use a 20-second timeout, no automatic retries and explicit UI retry.
++
++Read one binary/multipart file per request, max 4 MB plus bounded multipart overhead. Validate supported extensions/content type and binary signatures, not filename alone. Browser text reading supports TXT/MD/CSV/SRT/VTT. OpenAI reads PDF/DOCX and JPEG/PNG/WebP using the pinned snapshot; ElevenLabs HTTP `scribe_v2` transcribes audio/video speech. Clips are limited to 60 seconds. Normalized text is inspectable/editable before extraction. No arbitrary URL fetching and no raw media persistence.
++
++Extraction accepts 1–6 immutable sources, max 10,000 total characters and 64 KiB JSON. Return at most six proposed rules and three questions. App-generate IDs, enforce exact nonempty quotes and known source IDs. Scenario proposals (max three, three choices each) need human approval of the answer key and rule applicability before testing. Model text and uploads cannot approve/publish. OpenAI uses Responses strict structured output, `store:false`, reasoning `none` and the fixed model.
++
++## 5. Runtime and validation
++
++Continue using the exact Node/Bun/dependency versions in [README.md](README.md), only `bun.lock`, and `bun install --frozen-lockfile`. Scripts remain dev/build/start/typecheck/test plus the server model smoke probe. Domain and adapter changes require regression tests; release verification requires all tests, typecheck, production build and a desktop/mobile operator run. Provider access is only proven by real credential-backed smoke tests.
+diff --git a/CONTEXT.md b/CONTEXT.md
+index 506f8ae..bdab232 100644
+--- a/CONTEXT.md
++++ b/CONTEXT.md
+@@ -7,7 +7,7 @@ Baseline 1.2.0 · 7 November 2026 · Europe/Berlin
+ - Team BOOMERANG; slogan: “Experience does not retire.”
+ - Three people: frontend, backend, product/pitch.
+ - Finish the product demonstration and pitch deliverables by 17:00 today.
+-- Retain the existing draft's fictional event-operations case and text-first scope.
++- Use the approved guided expert workflow, opt-in business examples and speech-only video processing.
+ - This checkout is the actual MVP repository at `/Users/star/Workspace/boomerang-mvp`. Task 1 was initially built in the planning checkout by mistake, then copied here at the user’s request.
+ 
+ ## Current decisions
+@@ -20,13 +20,24 @@ Baseline 1.2.0 · 7 November 2026 · Europe/Berlin
+ 
+ ## Status and next action
+ 
+-Task 1 / W1 software gate passed with provider access explicitly blocked. The application now has exact dependency pins and `bun.lock`, Zod-derived shared contracts, S1-only initial state, fixed C1/C2 scenarios, a pure session reducer and Capture/Review/Practise views. Pending extraction context and hydration live outside the bundle. The labelled S1 fixture adapter creates only an unapproved preview; S2 is separate and inactive. Practice stays disabled before publication.
++The user approved and requested implementation of [the guided design](PRD/EXPERT-CAPTURE-DESIGN.md). The implementation is in this MVP checkout, using the unchanged exact Bun stack. [PRD/EXPERT-CAPTURE-PLAN.md](PRD/EXPERT-CAPTURE-PLAN.md) records the build slices.
+ 
+-Runtime verification used Node 24.22.2 and Bun 1.4.3; the system default Node is 26, so Node 24 was installed in a temporary tool directory for checks. Exact dependency versions and setup are in [README.md](README.md#exact-bootstrap-versions). Generated files remain uncommitted, as requested by the repository's commit policy.
++Implemented: empty expert profile; opt-in Keller Elektro/Nordform examples; six-step guided capture; source upload/paste/readable-text correction; snippet approval/correction/second review/exclusion/addition; same-role predecessor comparison; expert answer review/acceptance; scenario authoring/proposals and explicit applicability approval; separate final manual test; immutable publication; validated v2 localStorage restoration/recovery/reset. No top-level Practise tab or default roleplay remains.
+ 
+-`bun run smoke:model` exited 1 with an explicit configuration blocker: neither `OPENAI_API_KEY` nor `DEMO_ACCESS_CODE` is configured. No provider request was made; model access and valid live output remain unproven. The repeatable server-side probe uses the fixed snapshot and validates exact source evidence when configured. No provider/model substitution was made.
++Text uploads are read locally. Server read/extraction/scenario routes are implemented using the pinned OpenAI SDK/model and ElevenLabs HTTP Scribe v2. Video is spoken-content-only, as selected by the user. Files/requests/duration/evidence are validated. Live work cannot silently inherit example fixtures or labels.
+ 
+-The [customer evidence](docs/customer-evidence.md), [pitch](docs/pitch.md) and [submission](docs/submission.md) working files are open. Fictional paste-ready handover write-ups for a craft business and a Mittelstand workshop are in [doc/demo-cases](doc/demo-cases/README.md); the coded demo remains Demo Hall. No conversations, deployment or submitted artifacts are claimed. Next: configure server credentials and run the probe, then implement Task 2's protected extraction path. Publication, practice evaluation, gap closure and persistence remain Tasks 3–5. This shell is explicitly temporary and does not read or write localStorage.
++Provider smoke tests remain blocked: `OPENAI_API_KEY`, `DEMO_ACCESS_CODE` and `ELEVENLABS_API_KEY` are not configured. A real local request returned sanitized 503 NOT_CONFIGURED with no provider call; a browser extraction attempt kept its uploaded source. No successful live-media or model call is claimed. Next operational step: configure these server variables, restart, enter the demo access code in Connection settings, and run the live model/media checks with fictional data.
++
++All source changes remain uncommitted and unpushed. No deployment or submission is claimed. See the validation record below for actual checks; the old Task 1 record is historical.
++
++## Guided version validation
++
++- 38 domain/storage/provider/upload/media tests pass; new behavior tests were added before implementation, including regressions for review findings. Typecheck passes under Node 24.22.2 / Bun 1.4.3.
++- Fresh independent review found example/live provenance, predecessor coverage invalidation, stale predecessor selections, server duration verification, question context and error-classification issues. These were corrected; affected/full tests passed. Historical attempts now snapshot their exact scenario and guidance; same-capture publication increments history correctly.
++- Browser: empty required-field errors; Keller correction → second approval → prepared reply → answer review/approval → scenario approval → test selection validation → correct feedback → publish → reload. Uncovered C2 hid all choices and created an expert question. Nordform loaded its own profile/source/draft without Keller content.
++- Mobile at 390×844: review controls, settings and source upload fit the viewport. A real UTF-8 text file was selected through Browse files and appeared as a readable source; live extraction displayed missing configuration and retained it.
++- Final production preview is running from this MVP checkout at `http://localhost:3000`; desktop (1440×1000) and mobile (390×844) profiles were visually inspected. Screenshot artifacts: `/private/tmp/boomerang-new-desktop.png`, `/private/tmp/boomerang-new-mobile.png`.
++- Mechanical design detector returned no findings. Production build passed with all three API routes; frozen install left the lockfile unchanged. Links and anchors across 15 documents and `git diff --check` passed. Reset returned the test workspace to an empty profile. The model smoke command exited 1 with an explicit missing-configuration blocker; no provider call was made.
+ 
+ ## Customer evidence
+ 
+diff --git a/DESIGN.md b/DESIGN.md
+index 4a782b4..369444d 100644
+--- a/DESIGN.md
++++ b/DESIGN.md
+@@ -1,62 +1,11 @@
+-# BOOMERANG — Interface design
++# BOOMERANG — Guided expert workspace
+ 
+-Version 1.2.0 · Implements [PRD/SPEC.md](PRD/SPEC.md), W1–W10.
++Approved baseline A003 · 7 November 2026. Detailed interactions: [PRD/EXPERT-CAPTURE-DESIGN.md](PRD/EXPERT-CAPTURE-DESIGN.md).
+ 
+-## Layout
++A light workspace with a fixed-width progress rail on desktop and compact step progress on mobile. Profile → Sources → Review → Confirm → Expert questions → Ready. The main page uses generous whitespace, one primary action and readable source-backed snippets. No default fictional identity, role switch or Practise navigation item.
+ 
+-One application, three views: **Capture**, **Review**, **Practise**. View switching does not impersonate authenticated roles.
++Palette: canvas #F7F8F5, white content, forest #173F35, charcoal #182B26, muted #63736B, accent lime #D6ED9B. Text uses system sans-serif; body 16px/1.5, main heading 36–44px with restrained tracking. Form width ~660px, larger review workspace ~900px. Primary controls have clear labels and 44px minimum hit areas. Focus, errors and states use text as well as color.
+ 
+-Persistent header: BOOMERANG, “Experience does not retire,” current published version or “Not published,” and **Live AI** / **Fixture replay**. Display “Fictional training example” beside the case title. Keep Reset demo available in a secondary menu.
++Use a segmented progress bar and visible completed-step checks, with brief width/opacity transitions and reduced-motion support. Upload processing uses actual phases, no fictitious percentages. Check and cross at snippet top-right mean Approve / Needs correction. Saving an edit requires reapproval in the Confirm pass. Sources are expandable next to content. Questions use the same revise/accept loop.
+ 
+-Desktop: 960px content width, readable cards, 24px section gaps. Stack columns on narrow screens. Use system sans-serif, 16px body text and 1.5 line height. Palette: warm white `#FAFAF7`, ink `#1C2522`, muted text `#52605A`, green `#176145`, amber `#805600`, error red `#A82626`. Status always includes text, not color alone.
+-
+-## Capture — W1, W2, W8
+-
+-Top: expert name, content owner and incident title. Main area: the five incident prompts, editable text, **Use demo incident**, **Extract draft**. Source preview appears after submission; immutable saved text is separate from the editable field.
+-
+-Below: **Expert questions**, showing open/resolved status, case, originating version and owner. Opening a gap displays its full facts/question above the reply field. After extraction, navigate to Review with the new cards highlighted. Replies never display “Resolved” before publication.
+-
+-| State | Display/action |
+-| --- | --- |
+-| Empty | Explain the incident prompts; disable extraction for whitespace-only input |
+-| Ready | Show character count and enabled extraction |
+-| Extracting | Keep text visible; show progress label; disable duplicate extraction |
+-| No supported rule | Retain text and show the PRD's message; allow revision |
+-| Error | Inline error, retained text and one Retry; fixture mode is a separate action |
+-| Stale response | Explain that newer edits were kept; offer a fresh extraction |
+-
+-## Review — W3–W5, W8
+-
+-Each card shows situation, conditions, action, why, when to stop, source quote and **Draft / Approved**. Desktop: card content beside its evidence; mobile: evidence immediately below. Quote links expand the full source segment and author.
+-
+-Actions: **Edit**, **Reject**, **Approve**. Editing shows Save/Cancel; Save clears approval and links. Empty rationale displays “Not provided.” Rejection returns the card count immediately.
+-
+-Coverage section lists C1 and C2 with facts. A select control lists approved cards only; **Confirm link** records the reviewer's choice. An unlinked case reads **Not covered**. Replacing a link removes the old link first; a visible warning explains that applicability is reviewed manually.
+-
+-Publication bar shows approved-card count, covered-case count, reviewer/owner fields and **Publish vN**. If blocked, display the reason beside the disabled action. Editing a published playbook starts an update draft; it never edits the published card in place.
+-
+-After publication: show version, time and reviewer. For v2, show added/edited cards and case-link changes compared with v1. No modal celebration is needed.
+-
+-## Practise — W6, W7, W9
+-
+-First section: approved playbook cards using **Notice / Do / Why / Stop**. Each has an expandable source. Before publication show “Publish a reviewed playbook first.”
+-
+-Case chooser: two cards with title and coverage status. Covered case: facts, three option buttons, **Check answer**. After submission show result, approved explanation/source, version and **Try again**. Selecting an option alone does not submit or show feedback.
+-
+-Uncovered case: hide choices, show the exact PRD gap message and **View expert question**. The gap is created automatically; the button only navigates to it. Repeat visits reuse the same gap. Show no correct answer or unsupported action.
+-
+-Below: attempt history with case, chosen option or “No guidance,” outcome and knowledge version. Publication of v2 must not recolor the old v1 gap as a successful attempt. Show a separate **Retry with v2** action.
+-
+-## Session controls — W10
+-
+-Reset confirmation: “Reset this demo? Saved guidance, attempts and questions will be removed.” Buttons: Cancel / Reset demo. After reset show Capture with the S1 example and no published version.
+-
+-Storage failure: persistent temporary-session notice. Corrupt storage: recovery panel with Reset; never display partially trusted guidance. Restore state before enabling controls so a reload cannot flash or save a fresh session over existing data.
+-
+-## Interaction checks
+-
+-- Keyboard access, visible focus, associated field labels and error messages.
+-- Radio/option selection exposes selected state; statuses have readable text.
+-- Announce loading, extraction completion and errors through an appropriate live region.
+-- Long source text wraps inside cards; primary actions remain reachable without horizontal scrolling.
+-- Use plain labels and short feedback. Keep model names and implementation details out of the learner flow.
++The final screen opens the manual scenario test. Answer choices hide the answer key until submission. Publication is a distinct human action after a current successful test. Empty, loading, recovery, temporary-storage and provider errors must be usable. Preserve entries across Back/Continue and failures. Example dropdown offers exactly Keller Elektro and Nordform, with explicit replacement confirmation.
+diff --git a/PRD/PLAN.md b/PRD/PLAN.md
+index 78f11e8..f841564 100644
+--- a/PRD/PLAN.md
++++ b/PRD/PLAN.md
+@@ -1,5 +1,9 @@
+ # BOOMERANG — Build plan
+ 
++Current execution plan: [EXPERT-CAPTURE-PLAN.md](EXPERT-CAPTURE-PLAN.md), approved guided redesign A003. The user instructed implementation on 7 November 2026. The original Task 1 shell is the starting point, not the final MVP. No commits or pushes unless requested.
++
++# Original build plan — historical baseline
++
+ Version 1.2.0 · Three people · Finish including pitch by 17:00, 7 November 2026, Europe/Berlin.
+ 
+ **Goal:** demonstrate capture → review → publish → practise → gap → expert reply → publish update → retry.
+diff --git a/PRD/SPEC.md b/PRD/SPEC.md
+index 3fb05ab..2aa03ae 100644
+--- a/PRD/SPEC.md
++++ b/PRD/SPEC.md
+@@ -1,201 +1,25 @@
+-# BOOMERANG — Product requirements
++# BOOMERANG — Product workflow baseline A003
+ 
+-Version 1.2.0 · 7 November 2026 · Experience does not retire.
++7 November 2026 · Experience does not retire.
+ 
+-## 1. Product
++The approved [guided expert capture design](EXPERT-CAPTURE-DESIGN.md) owns detailed workflow and acceptance behavior. It supersedes the original Demo Hall roleplay. Architecture and contracts: [ARCHITECTURE.md](../ARCHITECTURE.md). Implementation: [EXPERT-CAPTURE-PLAN.md](EXPERT-CAPTURE-PLAN.md).
+ 
+-BOOMERANG turns an experienced colleague's decisions into reviewed guidance and practice for their successor. When a practice case lacks guidance, the app returns a specific question to the expert. Their reviewed answer becomes a new knowledge version.
+-
+-The output is a playbook: situation, next action, reasoning, exceptions and source. Practice checks whether a learner chooses the right next step for an explicitly supported case.
+-
+-## 2. Users
+-
+-| Role | Job |
+-| --- | --- |
+-| Expert | Explain incidents, review extracted guidance, answer gaps |
+-| Learner | Read approved guidance and practise decisions |
+-| Content owner | Maintain guidance and handle unanswered cases after the expert leaves |
+-| Buyer | Operations/service manager responsible for handover and onboarding |
+-
+-These are views within one demo session, not separate authenticated accounts. The first customer hypothesis is a small or midsized event-operations/service team.
+-
+-## 3. Scope
+-
+-Required: text capture, source-linked extraction, human review, immutable publication, readable playbook, two fixed practice cases, gap inbox, expert reply, v2 publication, retry, browser persistence and reset.
+-
+-Optional: short audio transcription after the complete text flow passes. Text remains the common input path.
+-
+-Excluded: arbitrary question answering, automatic discovery of every knowledge gap, learner reporting on covered cases, generated courses/videos, knowledge graphs, voice clones, database, cross-device collaboration, billing and LMS integration.
+-
+-## 4. Workflow
+-
+-### W1. Start the handover
+-
+-**Actor:** expert or content owner.
+-
+-1. Open Capture. See BOOMERANG, the demo label and the current knowledge version.
+-2. Enter the expert name and continuing content owner. Use Alex and the duty technician for the fictional demo.
+-3. Describe one incident. The form asks: What happened? What did you notice? What did you do and why? When should someone stop? How did you know it worked?
+-4. Paste notes directly or use the prepared S1 example. Optional transcription fills the same editable text field.
+-
+-**Result:** editable incident text. No guidance exists yet. Practice is disabled until a version is published. The initial session contains only S1 as available source material; S2 is withheld from active sources.
+-
+-### W2. Extract a draft
+-
+-**Actor:** expert; AI assists.
+-
+-1. Select **Extract draft**. Save the submitted text as immutable source segments with IDs and author.
+-2. Show a loading state and disable duplicate submissions. Keep the text visible.
+-3. Send only the submitted segments to the extraction API. Instructions embedded in the text remain source material.
+-4. The model returns draft cards and up to three unanswered questions. Each card contains a situation, conditions, action, optional rationale, exceptions and exact source quotations.
+-5. Validate format, limits, source IDs and quote membership. Assign rule IDs in the app.
+-6. Add valid cards to the current draft. Existing published versions are untouched. If the draft changed while extraction was running, discard the stale response with a message and preserve the newer draft.
+-
+-**Result:** unapproved cards in Review. Extraction cannot approve, link a case or publish.
+-
+-**No usable guidance:** show “No supported guidance found. Add a specific action or example.” Keep the source and allow editing. Missing rationale stays “Not provided”; the app does not invent it.
+-
+-**API failure:** retain the input, draft and published versions; show the error and one explicit retry. Switching to fixture mode requires a user action and stays visibly labelled.
+-
+-### W3. Review each card
+-
+-**Actor:** expert/reviewer.
+-
+-1. Read the situation, action and reasoning beside the original quote.
+-2. Check whether the guidance actually follows from the quote, including its conditions and exceptions. Quote matching alone does not establish correctness.
+-3. Choose **Approve**, **Edit** or **Reject**.
+-4. An edit clears that card's approval and any case links using it. A rejected card and its links leave the draft. Other unchanged approved cards retain approval.
+-5. To add evidence, capture a new source segment. Editing the input never overwrites source text used in an earlier version.
+-
+-**Result:** a draft containing only cards the reviewer intends to publish. Approval applies to the exact current card content. At least one approved card is required for publication.
+-
+-### W4. Confirm practice coverage
+-
+-**Actor:** reviewer.
+-
+-1. Open the fixed practice-case list in Review.
+-2. Read a case's facts and inspect the approved card that explains the answer.
+-3. Explicitly link the case to that card only if its conditions and action support the case. One case has at most one link.
+-4. Leave unsupported cases unlinked. In the first version C1 links to R1; C2 remains unlinked.
+-
+-**Result:** reviewer-confirmed coverage for known cases. This is a manual mapping, not AI gap detection. A link establishes applicability; the human-authored fixture answer determines which option is correct.
+-
+-### W5. Publish v1
+-
+-**Actor:** reviewer.
+-
+-1. Enter reviewer and continuing-owner names.
+-2. Select **Publish**. Validate all included cards, evidence and links again.
+-3. Reject an empty draft, unapproved card, invalid evidence or a stale draft revision/base version. Show the specific reason.
+-4. Create knowledge v1 with copied sources, cards, links, reviewer, owner and timestamp.
+-5. Show the approved playbook in Practise. Enable the fixed cases. Display “1 of 2 demo cases covered.”
+-
+-**Result:** an immutable snapshot. Later edits happen in a new draft. Published content remains available until another version is published.
+-
+-### W6. Learn and practise a covered case
+-
+-**Actor:** learner.
+-
+-1. Read the approved playbook: what to notice, what to do, why, and when to stop.
+-2. Start C1. Pin this attempt to the selected published version.
+-3. Read the case facts and choose a next step from three fixed options. No correct-answer marker is shown before submission.
+-4. Select **Check answer**. A missing selection stays on the question with a validation message.
+-5. Resolve the approved case link. Compare the chosen option with the fixture's human-authored correct option.
+-6. For a correct choice show “Correct next step.” For a wrong choice show “Try again” with the approved action and reasoning. Both cite the linked rule's source.
+-7. Save a submitted attempt with its selected option, result and knowledge version. A retry creates a new attempt.
+-
+-**Result:** feedback for this case and version. A successful attempt is not a competence certificate.
+-
+-### W7. Encounter an uncovered case
+-
+-**Actor:** learner.
+-
+-1. Start C2 under v1. Check coverage before showing answer choices.
+-2. No approved link exists. Show: **“This situation is not covered by the approved playbook. Ask the expert.”**
+-3. Record the uncovered attempt against v1. Create one open gap for C2/v1 automatically; repeated visits reuse it.
+-4. Generate the question from C2's fixed facts using the template below. Show **View expert question** to open the inbox entry.
+-5. Keep the case unanswered. Choosing or guessing an option cannot bypass missing coverage.
+-
+-**Result:** an open question with case facts, originating version and assigned continuing owner. No action is recommended. An unknown case or conflicting link also stops evaluation; unknown cases cannot be created through the v1 UI.
+-
+-### W8. Answer the gap
+-
+-**Actor:** expert or qualified content owner.
+-
+-1. Open the gap inbox in Capture. Read C2, its facts and its question.
+-2. Enter the missing explanation as new source S2. The gap stays open.
+-3. Extract R2 through W2. Create the update draft from v1, retaining unchanged R1 and its approval/link.
+-4. Review R2 through W3, then approve C2 → R2 through W4.
+-5. Inspect the change summary: R2 added; C2 now supported. Published v1 and its attempts remain unchanged.
+-
+-**Result:** a reviewed update draft. A reply or successful extraction alone does not close the gap. Without an available qualified person, the gap remains open with the content owner.
+-
+-### W9. Publish v2 and retry
+-
+-**Actor:** reviewer, then learner.
+-
+-1. Publish the update using W5's checks. Create v2 without replacing v1.
+-2. Close G1 only because a newer published version now contains C2's approved link. Record `resolvedVersion: 2`.
+-3. Show “2 of 2 demo cases covered” and the added rule/source.
+-4. Start a new C2 attempt under v2. Show answer choices, then source-backed feedback after submission.
+-5. Keep the original uncovered C2/v1 attempt visible in history.
+-
+-**Result:** a demonstrated change from an unanswered situation to reviewed, teachable guidance.
+-
+-### W10. Reload and reset
+-
+-1. Save the fictional bundle after each completed state transition. Never persist credentials.
+-2. Reload: validate the saved bundle and restore its draft, versions, attempts and gaps. Wait for restoration before writing a default bundle.
+-3. If storage is blocked, retain in-memory state and show “Temporary session: changes will be lost on reload.” If data is invalid, offer Reset instead of using it.
+-4. Select **Reset demo**, confirm, and replace saved and in-memory state with the starting bundle: S1 only, no S2, draft, published versions, attempts or gaps.
+-
+-**Result:** the operator can run the same complete story again.
+-
+-```mermaid
+-flowchart TD
+-  A[Capture incident] --> B[Extract draft]
+-  B --> C[Expert reviews cards and case links]
+-  C --> D[Publish v1]
+-  D --> E[Playbook and practice]
+-  E --> F{Approved case link?}
+-  F -->|Yes| G[Choice and source-backed feedback]
+-  F -->|No| H[Open expert question]
+-  H --> I[Capture new answer]
+-  I --> B
+-  C --> J[Publish v2]
+-  J --> K[Close gap and start new attempt]
+-```
+-
+-## 5. Demo content
+-
+-Fictional venue: Demo Hall. Expert: Alex. Learner: Sam. These examples are training fixtures, not equipment instructions for real use.
+-
+-**S1:** “At Demo Hall, when the presenter cannot be heard and the receiver shows no input, I check whether the handheld microphone is powered and unmuted. I check the simple visible controls first so we don't change unrelated mixer settings. If I smell burning, see damaged equipment, or cannot identify the setup, I stop and call the duty technician.”
+-
+-**S2, added only during W8:** “If the receiver shows input but the room has no sound, I check the labelled channel's mute indicator. I do not change unfamiliar routing during a live session; I call the duty technician.”
+-
+-| Case | Facts | Options in display order | Correct option |
+-| --- | --- | --- | --- |
+-| C1 | Presenter silent; receiver has no input; no hazard reported | `C1-A` check visible microphone power/mute; `C1-B` check session agenda; `C1-C` wait without checking | C1-A, supported by S1 |
+-| C2 | Receiver shows input; room silent; no hazard reported | `C2-A` check session agenda; `C2-B` check labelled channel mute indicator; `C2-C` wait without checking | C2-B, supported by S2 |
+-
+-**G1 question:** “At Demo Hall, when the receiver shows input but the room is silent, what do you check, why, and when do you stop or escalate?”
+-
+-R1/R2 are stable IDs in fixtures. Live extraction assigns new IDs; the reviewer selects the actual returned card for each link. All learner explanations come from the published card, not hidden fixture prose.
+-
+-## 6. Acceptance criteria
+-
+-| ID | Pass condition |
++| Workflow | Behavior |
+ | --- | --- |
+-| AC1 | Novel text produces source-linked, unapproved cards through a real model call |
+-| AC2 | Editing/rejecting a card invalidates its approval and links; unsupported evidence blocks publication |
+-| AC3 | v1 publishes only reviewed content and supports C1; C2 stays unanswered |
+-| AC4 | C2/v1 creates one open gap, never a guessed recommendation |
+-| AC5 | S2 becomes a reviewed update; only publication of its approved C2 link closes the gap |
+-| AC6 | C2 works under v2; v1 and its original attempt remain unchanged |
+-| AC7 | Reload restores valid state; Reset removes the complete previous demo state |
+-| AC8 | Error/fixture modes are explicit; errors preserve prior content |
+-| AC9 | Deck, repo and viewable video of at most three minutes are ready and submitted by 17:00 |
++| W1 | Empty expert profile; opt-in Keller Elektro or Nordform example |
++| W2 | Upload/paste material, inspect normalized sources, extract unapproved skills |
++| W3 | Approve snippets or correct them; edited/added snippets require a second review |
++| W4 | Confirm corrections and same-role predecessor applicability; resolve changes explicitly |
++| W5 | Publish immutable memory only after a current successful manual test |
++| W6 | Final-step scenario test, three choices, explicit submission and source-backed feedback |
++| W7 | Uncovered case stays unanswered and opens an owned question |
++| W8 | Expert questions: answer, review, revise and explicitly accept |
++| W9 | Revised memory clears test readiness; retry produces a new revision-bound result |
++| W10 | Validate/restore local workspace before saving; recover/reset safely |
++
++Real-person demo material comes later. All supplied examples remain fictional. AI extraction/scenario proposals never grant approval or publication. Video processing covers spoken content only. Prior captures are available only in this browser; accounts and cross-device storage are outside scope.
++
++Acceptable means the full approved acceptance gates run in the actual application. Missing provider credentials are reported, never bypassed with an unlabeled fixture.
+ 
+ ## 7. Customer and pitch
+ 
+diff --git a/README.md b/README.md
+index 67ab6f2..78f79cc 100644
+--- a/README.md
++++ b/README.md
+@@ -11,9 +11,9 @@
+ 
+ [AGENTS.md](AGENTS.md) governs agent work. [CONTEXT.md](CONTEXT.md) records decisions and actual status.
+ 
+-## Run the Task 1 shell
++## Run the guided MVP
+ 
+-Use Node **24.22.2** (`.nvmrc`) and Bun **1.4.3** (`packageManager`). Next.js runs on Node; Bun installs dependencies and invokes scripts. The default system Node may need switching before running these commands.
++Work in `/Users/star/Workspace/boomerang-mvp`. Use Node **24.22.2** (`.nvmrc`) and Bun **1.4.3** (`packageManager`). Next.js runs on Node; Bun installs dependencies and invokes scripts.
+ 
+ ```sh
+ bun install --frozen-lockfile
+@@ -24,9 +24,25 @@ bun run build
+ bun run start
+ ```
+ 
+-Open [the local demo](http://localhost:3000). Capture, Review and Practise are available from the header. The initial bundle has only S1, with no draft, publication, attempt or gap. **Fixture replay** is the default; **Extract fixture draft** shows an unapproved S1 preview. Editing the fixture text produces an explicit error; it does not run AI on new text.
++Open [the local app](http://localhost:3000). Start with an empty profile or choose Keller Elektro / Nordform GmbH from **Try an example**. No roleplay identity or Practise tab is imposed on the expert.
+ 
+-Review approval/publication, practice evaluation, gap handling and browser persistence belong to subsequent tasks. Practice is disabled. This build uses memory only and says so visibly; reload clears it. Session settings offers Reset demo (with confirmation) and mode selection; mode changes start a clean session so fixture history cannot enter Live AI mode. Live extraction is unavailable in this build. No deployment is claimed.
++The flow is Profile → Add knowledge → Review snippets → Confirm corrections / previous memory → Expert questions → Ready to share. Green check approves the exact snippet revision; red cross opens correction. Saved corrections receive a second review. Expert answers are saved for review, then explicitly approved as memory. Unanswered questions remain owned and visible.
++
++The final step reviews scenario facts, choices, correct answers and source links. **Run a manual test** opens the separate answer-choice test; uncovered cases never show a guessed answer. Publish requires a current correct test and approved content. Published memories and old test snapshots remain unchanged when the draft changes.
++
++The workspace is validated and saved in localStorage (`boomerang.workspace.v2`) after hydration. Prior captures match organization, position and example/live context on this device. Start a new memory preserves published history; Reset workspace removes this local workspace after confirmation. Invalid storage opens recovery without overwriting saved content. Raw files, access codes and provider credentials are never saved in the bundle.
++
++### Sources and live processing
++
++Text files (TXT/MD/CSV/SRT/VTT) are read locally. PDF/DOCX and JPEG/PNG/WebP files use the pinned OpenAI model to obtain readable text; MP3/WAV/M4A/OGG/WebM audio and MP4/WebM video use ElevenLabs `scribe_v2` for speech only. Inspect/correct readable text before extracting skills. Sources are immutable; a correction creates a new source. Unsupported, unreadable or unconfigured processing produces a visible error and retains completed work.
++
++Limits: six active sources, 10,000 source characters per extraction, 4 MB per file and recordings up to 60 seconds. Recording duration must be readable from container metadata on the server; streaming files with unverifiable duration need exporting or a pasted transcript. Large/long files are rejected rather than silently truncated.
++
++The two examples use explicitly labelled, human-authored prepared drafts. Adding personal files/notes or editing example text requires replacing the prepared example context; live extraction never inherits example scenarios or an example label. Human approval remains required in both paths.
++
++Set `OPENAI_API_KEY`, `DEMO_ACCESS_CODE`, and `ELEVENLABS_API_KEY` in `.env.local` using `.env.example`, then restart the server. Enter only the demo access code in **Connection settings**; it stays in memory. Keys stay server-side. Live endpoints are `/api/read`, `/api/extract`, `/api/scenarios`, with access checks, bounded input, sanitized errors and explicit retries.
++
++Current limitation: real provider/media smoke tests remain **blocked by missing credentials**. Domain/adapter tests and the labelled example loop are verified; live AI accuracy, handwriting recognition and provider access are not claimed. No deployment, shared accounts or cross-device storage is claimed.
+ 
+ ### Exact bootstrap versions
+ 
+@@ -52,7 +68,7 @@ Copy `.env.example` to `.env.local` and configure `OPENAI_API_KEY` and `DEMO_ACC
+ bun run smoke:model
+ ```
+ 
+-This standalone script uses only the fixed `gpt-5.4-mini-2026-03-17` snapshot, Responses structured output, `store: false`, reasoning effort `none`, zero retries and a 20-second timeout. It validates exact source quotes from fictional text without printing provider responses or credentials. It does not publish anything or substitute a model. The initial run is **blocked: neither required server variable is configured**. Provider access is not proven.
++This standalone script uses only the fixed `gpt-5.4-mini-2026-03-17` snapshot, Responses structured output, `store: false`, reasoning effort `none`, zero retries and a 20-second timeout. It validates exact source quotes from fictional text without printing provider responses or credentials. It does not publish anything or substitute a model. The current run is **blocked: the required server variables are not configured**. Provider access is not proven.
+ 
+ Working notes: [customer evidence](docs/customer-evidence.md), [pitch](docs/pitch.md), [submission](docs/submission.md). These contain no claimed conversations or completed submission artifacts.
+ 
+diff --git a/doc/demo-cases/README.md b/doc/demo-cases/README.md
+index 8663e02..7241fad 100644
+--- a/doc/demo-cases/README.md
++++ b/doc/demo-cases/README.md
+@@ -1,21 +1,10 @@
+-# Demo cases
++# Example datasets
+ 
+-Fictional training text for later entry into the MVP forms. These write-ups are not customer evidence and they do not replace the coded Demo Hall fixture in [src/lib/demo.ts](../../src/lib/demo.ts). The built-in Capture example, practice cases and gap question stay the microphone handover in [PRD/SPEC.md](../../PRD/SPEC.md#5-demo-content).
++These fictional cases can now be selected from **Try an example** in the guided MVP. They are not customer evidence or live AI output. The prepared source and draft are labelled; every snippet, expert answer and scenario applicability link still requires human approval.
+ 
+-Each case is one English file. Paste a labelled block into the matching screen when the forms accept free text. The current build still replays only the unchanged Demo Hall S1 incident.
++- [Keller Elektro](keller-elektro/case.md): Marta Keller, master electrician; continuing owner Jonas Keller.
++- [Nordform GmbH](nordform/case.md): Helmut Kruse, press-brake setter; continuing owner Anja Berger.
+ 
+-| Block in the case file | Screen | Field |
+-| --- | --- | --- |
+-| Expert name | Capture | Expert name |
+-| Continuing content owner | Capture | Continuing content owner |
+-| S1 incident notes | Capture | Incident notes |
+-| Expected review card | Review | Situation, conditions, action, why, when to stop |
+-| C1 | Practise | Covered case: facts and three options |
+-| G1 question | Capture | Expert question opened from the uncovered case |
+-| S2 reply | Capture | Reply entered for that open question |
+-| C2 | Practise | Second case, covered only after S2 is reviewed and published |
++The implementation in [src/lib/demo.ts](../../src/lib/demo.ts) follows these human-authored case documents. Only S1 starts active. S2 is offered as a prepared expert reply when the follow-up question is opened; its answer is saved and explicitly reviewed before becoming memory. C1/C2 carry no automatic source link or approval. Test choices remain hidden for uncovered scenarios, regardless of the fixture answer key.
+ 
+-The expected review cards are human-authored targets for the reviewer. They are not model output.
+-
+-- [Keller Elektro](keller-elektro/case.md) — six-person electrical craft business. The master electrician retires.
+-- [Nordform GmbH](nordform/case.md) — sheet-metal workshop of about 40 people. The press-brake setter retires.
++Choose **Your own knowledge** for an empty capture. Adding/editing personal material replaces the example context with explicit confirmation, so fixtures cannot masquerade as live extraction. The normal start contains no Demo Hall roleplay.
+diff --git a/docs/pitch.md b/docs/pitch.md
+index 347e540..4a67e03 100644
+--- a/docs/pitch.md
++++ b/docs/pitch.md
+@@ -4,6 +4,6 @@ Task 1 / W1 · 7 November 2026
+ 
+ BOOMERANG — Experience does not retire.
+ 
+-The product story and six-slide narrative are defined in [PRD/SPEC.md](../PRD/SPEC.md#7-customer-and-pitch). The current build demonstrates the three-view shell and a labelled, unapproved S1 fixture preview. Live extraction, publication, practice, gap closure and persistence are not yet implemented.
++The product story and six-slide narrative are defined in [PRD/SPEC.md](../PRD/SPEC.md#7-customer-and-pitch). The current build implements the guided expert capture, review/correction, questions, manual scenario test, publication and local persistence flow. Keller Elektro and Nordform are labelled prepared examples. Provider routes are implemented, but live access/media smoke tests remain blocked by missing credentials.
+ 
+ Build the deck and video around verified behavior and actual [customer evidence](customer-evidence.md). The €750 pilot is an untested offer. No deck or video is claimed complete.
+diff --git a/src/app/globals.css b/src/app/globals.css
+index c56a694..3856f5a 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -1,45 +1,22 @@
+ @import "tailwindcss";
+ 
+-:root { --background: #fafaf7; --ink: #1c2522; --muted: #52605a; --green: #176145; --amber: #805600; --error: #a82626; }
+-body { background: var(--background); color: var(--ink); font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 1.5; margin: 0; }
+-button, input, textarea, select { font: inherit; }
+-button, summary, select { cursor: pointer; }
+-button { background: var(--green); color: white; border: 1px solid var(--green); border-radius: 6px; padding: 10px 18px; font-weight: 600; }
+-button:hover:not(:disabled) { filter: brightness(.93); }
+-button:disabled { cursor: not-allowed; background: #e9ece7; color: var(--muted); border-color: #d8dfd7; }
+-:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+-input, textarea, select { display: block; width: 100%; border: 1px solid #bcc8bd; border-radius: 6px; padding: 10px 12px; background: white; color: var(--ink); margin-top: 6px; }
+-textarea { resize: vertical; }
+-label, dt { font-weight: 600; }
+-h1 { font-size: clamp(28px, 4vw, 38px); line-height: 1.2; font-weight: 600; letter-spacing: -.035em; margin: 8px 0 12px; }
+-h2 { font-size: 20px; font-weight: 600; line-height: 1.35; }
+-p { margin-top: 8px; }
+-.app-shell { max-width: 1008px; margin: auto; padding: 0 24px; }
+-.site-header { padding-top: 32px; }
+-.brand { display: flex; align-items: center; gap: 14px; font-size: 23px; font-weight: 800; letter-spacing: .045em; text-decoration: none; }
+-.brand span { color: var(--green); font-size: 32px; line-height: 1; }
+-.tagline { color: var(--muted); font-size: 14px; margin-top: 2px; }
+-.badge { display: inline-block; border: 1px solid #d8dfd7; border-radius: 4px; padding: 4px 9px; font-size: 13px; white-space: nowrap; }
+-.amber { color: var(--amber); background: #fff6de; border-color: #ead9aa; }
+-.header-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 28px; border-bottom: 1px solid #d8dfd7; padding-bottom: 12px; }
+-.nav-button { background: transparent; border-color: transparent; color: var(--muted); }
+-.nav-button[aria-current] { background: #e5eee5; color: var(--green); }
+-.session-menu { position: relative; font-size: 14px; }
+-.session-menu > div { position: absolute; z-index: 2; right: 0; width: min(280px, 80vw); padding: 20px; background: white; border: 1px solid #d8dfd7; border-radius: 6px; margin-top: 12px; }
+-main { padding: 24px 0 48px; }
+-.temporary { font-size: 13px; color: var(--muted); margin: 0 0 32px; }
+-.eyebrow { text-transform: uppercase; letter-spacing: .1em; font-size: 12px; font-weight: 700; color: var(--green); }
+-.intro { color: var(--muted); max-width: 600px; }
+-.panel { border: 1px solid #d8dfd7; border-radius: 8px; padding: 24px; background: white; overflow-wrap: anywhere; }
+-.muted { color: var(--muted); font-size: 14px; }
+-.fictional { font-size: 13px; color: var(--amber); }
+-.secondary { color: var(--ink); border-color: #bcc8bd; background: transparent; }
+-.divider { border-top: 1px solid #e5e9e2; padding-top: 16px; }
+-.source-text { white-space: pre-wrap; margin: 16px 0; }
+-.notice { color: var(--amber); background: #fff6de; border-left: 3px solid var(--amber); padding: 16px; margin-bottom: 24px; }
+-.evidence { background: var(--background); padding: 20px; border-radius: 4px; }
+-blockquote { border-left: 2px solid #bcc8bd; padding-left: 16px; margin: 16px 0; }
+-dt { margin-bottom: 4px; color: var(--green); }
+-footer { padding: 20px 0 32px; border-top: 1px solid #d8dfd7; color: var(--muted); font-size: 13px; }
+-@media (max-width: 480px) { .app-shell { padding: 0 16px; } .panel { padding: 18px; } .nav-button { padding: 10px 12px; } }
+-@media (max-width: 640px) { .session-menu > div { left: 0; right: auto; } }
++:root{--canvas:#f7f8f5;--paper:#fff;--ink:#182b26;--muted:#63736b;--forest:#173f35;--forest-hover:#225346;--lime:#d6ed9b;--line:#e0e6df;--soft:#eef2eb;--red:#a53436;--amber:#795517;--radius:14px;--rail:256px;color-scheme:light;}
++*{box-sizing:border-box;}body{margin:0;background:var(--canvas);color:var(--ink);font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;}button,input,textarea,select{font:inherit;}button,summary,select{cursor:pointer;}button{transition:background-color .16s,color .16s,border-color .16s;letter-spacing:-.01em;}button:disabled{cursor:not-allowed;opacity:.48;}a{color:inherit;text-decoration:none;}h1,h2,h3,p{margin:0;}h1,h2,h3{text-wrap:balance;}h1{font-size:clamp(36px,3.8vw,48px);font-weight:600;letter-spacing:-.035em;line-height:1.13;}h1 span{color:var(--muted);}h2{font-size:19px;line-height:1.4;font-weight:600;letter-spacing:-.018em;}h3{font-size:16px;font-weight:600;line-height:1.45;}p{max-width:72ch;}ul,ol{margin:0;padding:0;}button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #6d8d43;outline-offset:4px;}input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #d0e2c7;outline-offset:1px;border-color:#72906f;}::selection{background:var(--lime);color:var(--forest);}input,textarea{caret-color:var(--forest);}*{scrollbar-width:thin;scrollbar-color:#bdcbbd transparent;}[hidden]{display:none!important;}
++.workspace-shell{min-height:100vh;display:flex;}.workspace-rail{width:var(--rail);position:fixed;inset:0 auto 0 0;background:#edf1e9;border-right:1px solid #e0e6dc;padding:38px 25px 24px;display:flex;flex-direction:column;z-index:5;}.wordmark{display:flex;align-items:center;gap:7px;font-size:24px;letter-spacing:-.06em;font-weight:700;color:var(--forest);}.wordmark svg{flex:none;margin-left:-3px;}.brand-period{margin-left:-6px;}.rail-tagline{font-size:12px;color:#526b5d;margin-top:6px;margin-left:3px;}.rail-journey{margin-top:64px;}.rail-section-title{font-size:10px;font-weight:700;letter-spacing:.12em;color:#728172;padding-left:9px;margin-bottom:24px;}.rail-journey ol{list-style:none;}.rail-journey li{position:relative;margin-bottom:12px;}.rail-journey li:not(:last-child)::after{content:"";position:absolute;width:1px;background:#d4ded0;top:38px;bottom:-16px;left:22px;z-index:-1;}.rail-journey button{display:flex;align-items:center;gap:13px;padding:9px 6px;width:100%;text-align:left;border:none;border-radius:8px;background:transparent;color:#708071;min-height:54px;}.rail-journey button:disabled{opacity:1;cursor:default;}.rail-journey button:not(:disabled):hover{background:#e3eadd;}.step-number{background:#edf1e9;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid #ccd7c7;border-radius:50%;font-size:12px;color:#62735f;flex:none;font-variant-numeric:tabular-nums;}.rail-journey strong{display:block;font-weight:500;font-size:14px;}.rail-journey small{display:block;font-size:10px;margin-top:2px;color:#788977;}.rail-journey .active button{color:var(--forest);}.rail-journey .active strong{font-weight:700;}.rail-journey .active .step-number{background:var(--forest);border-color:var(--forest);color:white;}.rail-journey .complete:not(.active) .step-number{background:var(--lime);border-color:var(--lime);color:var(--forest);}.rail-footer{margin-top:auto;padding:54px 8px 0;}.rail-footer-icon{width:36px;height:36px;border:1px solid #c8d4bf;border-radius:10px;display:grid;place-items:center;color:#526b44;margin-bottom:15px;}.rail-footer p{font-size:13px;line-height:1.7;color:#4d634e;}.rail-footer strong{font-weight:600;color:var(--forest);}.rail-footer>span{display:block;font-size:10px;color:#75836f;margin-top:22px;}
++.workspace-main{margin-left:var(--rail);width:calc(100% - var(--rail));display:flex;flex-direction:column;min-height:100vh;}.workspace-topbar{height:95px;padding:0 48px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);gap:20px;background:#fafbf8;}.workspace-location{display:flex;align-items:center;gap:12px;font-size:12px;white-space:nowrap;}.workspace-location>span{color:var(--muted);}.workspace-location>strong{font-weight:500;}.workspace-location>svg{color:#879688;}.topbar-actions{display:flex;align-items:center;gap:23px;}.dataset-picker{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--muted);font-weight:400;white-space:nowrap;}.dataset-picker select{background:transparent;border:1px solid var(--line);padding:8px 27px 8px 10px;border-radius:7px;color:var(--ink);font-size:12px;width:auto;margin:0;max-width:180px;}.connection-menu{position:relative;}.connection-menu>summary{list-style:none;width:36px;height:36px;display:grid;place-items:center;color:var(--muted);border-radius:8px;}.connection-menu>summary:hover{background:var(--soft);}.connection-menu>summary::-webkit-details-marker{display:none;}.connection-menu>div{position:absolute;right:0;top:45px;width:310px;padding:22px;background:white;border:1px solid var(--line);border-radius:var(--radius);z-index:20;box-shadow:0 8px 28px #182b2612;}.connection-menu h3{margin-bottom:16px;}.connection-menu p{font-size:12px;color:var(--muted);margin:12px 0;}.connection-menu .text-button{display:flex;margin-top:14px;}
++.workspace-content{max-width:1100px;width:100%;margin:0 auto;padding:34px 56px 54px;flex:1;}.progress-heading{display:flex;justify-content:space-between;align-items:center;font-size:11px;gap:20px;margin-bottom:12px;color:var(--muted);}.progress-heading>span:first-child{color:#52665b;}.progress-separator{display:inline-block;margin:0 10px;color:#a6b0a3;}.save-label{display:flex;align-items:center;gap:7px;white-space:nowrap;}.save-dot{width:5px;height:5px;border-radius:50%;background:#74976c;}.segmented-progress{display:flex;gap:5px;margin-bottom:46px;height:4px;}.segmented-progress>span{flex:1;background:#e3e9df;border-radius:3px;transition:background-color .25s ease-out;}.segmented-progress .done{background:#79985b;}.segmented-progress .current{background:var(--forest);}.example-note{display:flex;align-items:center;gap:8px;margin:-26px 0 26px;color:#6d672c;font-size:11px;background:#f2f0e3;padding:9px 12px;border-radius:6px;}.example-note>svg{flex:none;}.step-surface{max-width:680px;margin:0 auto;}.step-surface.wide{max-width:850px;}.step-focus:focus{outline:none;}.page-heading{margin-bottom:37px;}.page-heading>p{font-size:14px;line-height:1.75;max-width:520px;color:var(--muted);margin-top:18px;}.profile-step .page-heading{margin-bottom:40px;}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:26px 24px;}label{display:block;font-size:12px;font-weight:600;line-height:1.5;}label>span[aria-hidden]{color:#768b76;font-size:11px;}.optional{font-size:10px;font-weight:400;color:#7c897d;margin-left:5px;}input:not([type=radio]),textarea,select{display:block;width:100%;padding:12px 14px;margin-top:9px;border:1px solid #d7dfd4;border-radius:8px;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5;min-width:0;transition:border-color .15s;}input:not([type=radio]){height:48px;}textarea{resize:vertical;}input::placeholder,textarea::placeholder{color:#748277;opacity:1;}input[type=radio]{accent-color:var(--forest);width:18px;height:18px;flex:none;}input[type=number]{font-variant-numeric:tabular-nums;}.owner-field{padding-top:30px;margin-top:30px;border-top:1px solid var(--line);}.field-help{font-size:11px;line-height:1.6;color:var(--muted);margin-top:9px;}.quiet{color:var(--muted);font-size:12px;line-height:1.65;}.invalid input{border-color:#b74d4c;}.field-error{display:block;color:var(--red);font-size:11px;margin-top:5px;font-weight:400;}.error-text{font-size:12px;color:var(--red);margin-top:10px;}.step-actions{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:42px;padding-top:25px;border-top:1px solid var(--line);}.primary,.secondary{border-radius:8px;min-height:46px;padding:12px 20px;display:inline-flex;align-items:center;justify-content:center;gap:13px;font-size:12px;font-weight:600;border:1px solid transparent;white-space:nowrap;}.primary{background:var(--forest);color:white;}.primary:hover:not(:disabled){background:var(--forest-hover);}.primary:disabled{background:#c4cfc2;color:#4c6152;opacity:.8;}.secondary{background:transparent;border-color:#d4ddd0;color:var(--forest);}.secondary:hover:not(:disabled){background:var(--soft);}.small{min-height:37px;padding:8px 13px;font-size:11px;gap:8px;}.text-button,.back-button{display:inline-flex;align-items:center;gap:7px;border:0;background:none;padding:8px 0;color:var(--forest);font-size:12px;font-weight:600;text-align:left;}.text-button:hover:not(:disabled),.back-button:hover:not(:disabled){color:#4f772e;text-decoration:underline;text-underline-offset:4px;}.back-button{font-weight:500;color:var(--muted);}.text-button.subtle{color:var(--muted);font-size:11px;font-weight:400;}.danger{color:var(--red);}.inline-icon{display:flex;align-items:center;gap:8px;}.inline-icon>svg{color:#71866d;}.row-end{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:16px;}.row-between{display:flex;justify-content:space-between;align-items:center;gap:16px;}.flex-actions{display:flex;align-items:center;gap:8px;}.actions-with-help{display:flex;align-items:flex-end;flex-direction:column;gap:8px;}
++.dropzone{border:1.5px dashed #bdcdb4;border-radius:var(--radius);padding:38px 24px 28px;text-align:center;background:#f0f4eb;transition:background-color .15s,border-color .15s;}.dropzone.dragging{background:#e5efd5;border-color:var(--forest);}.upload-glyph{margin:0 auto 16px;width:54px;height:54px;display:grid;place-items:center;background:#e1ebd8;border-radius:14px;color:#507043;}.dropzone h2{font-size:19px;}.dropzone>p:not(.upload-limits){font-size:12px;color:var(--muted);margin:5px auto 18px;}.dropzone .upload-limits{font-size:10px;line-height:1.8;color:#6b7a65;margin:21px auto 0;}.source-alternatives{display:flex;align-items:center;justify-content:center;gap:12px;padding:19px 0;font-size:12px;color:var(--muted);}.inline-editor{border:1px solid var(--line);padding:22px;border-radius:var(--radius);background:white;margin:12px 0 22px;}.file-queue{margin:8px 0 20px;}.file-row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line);}.file-copy{flex:1;min-width:0;}.file-copy strong{font-size:12px;overflow-wrap:anywhere;}.file-copy p{font-size:11px;margin-top:3px;}.section-label{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:22px 0 15px;}.section-label h2{font-size:16px;}.section-label>span{font-size:10px;color:var(--muted);}.sources-list{margin-top:15px;}.source-preview{background:white;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden;}.source-preview>summary{display:flex;align-items:center;gap:12px;padding:15px 17px;list-style:none;}.source-preview>summary::-webkit-details-marker{display:none;}.file-symbol{display:grid;place-items:center;width:37px;height:39px;background:#f0f4ec;border-radius:7px;color:#6a8060;flex:none;}.source-title{flex:1;min-width:0;}.source-title strong{display:block;font-size:12px;font-weight:500;overflow-wrap:anywhere;}.source-title small{display:block;font-size:10px;color:var(--muted);margin-top:3px;}.read-status{display:flex;align-items:center;gap:4px;font-size:10px;color:#507344;}.source-preview>summary>svg:last-child{color:#899987;transition:transform .15s;}.source-preview[open]>summary>svg:last-child{transform:rotate(90deg);}.source-body{padding:0 20px 20px;}.source-body textarea{font-size:12px;line-height:1.75;}
++.review-counts{display:flex;flex-wrap:wrap;align-items:center;gap:22px;margin:-6px 0 22px;font-size:11px;color:var(--muted);}.review-counts strong{font-size:12px;color:var(--forest);font-weight:600;margin-right:3px;}.fixture-label{margin-left:auto;font-size:10px;color:#77652d;}.review-list{display:grid;gap:18px;}.snippet{border:1px solid #dce3d7;border-radius:var(--radius);background:white;padding:23px 26px;}.snippet.approved{border-color:#c5d6b6;}.snippet-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;}.status{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:500;color:#6b785f;background:#eff3eb;border-radius:5px;padding:4px 7px;white-space:nowrap;}.status.approved{background:#e7f0dd;color:#416132;}.status.pending,.status.correction,.status.revised{background:#f6efdd;color:#7a6125;}.snippet-decisions{display:flex;gap:7px;}.decision{display:grid;place-items:center;width:34px;height:34px;min-width:34px;border-radius:7px;border:1px solid transparent;background:none;}.decision.approve{background:#e6f0dd;color:#3c6b30;border-color:#d2e2c4;}.decision.approve:hover:not(:disabled){background:#d2e5c1;}.decision.correct{background:#fbefec;color:#ad514b;border-color:#f0dcd6;}.decision.correct:hover:not(:disabled){background:#f6dad3;}.snippet>h2{font-size:18px;max-width:58ch;margin-bottom:14px;}.snippet-action{font-size:14px;line-height:1.75;margin-bottom:20px;}.snippet-context{font-size:12px;line-height:1.7;display:grid;gap:11px;}.snippet-context>div{display:grid;grid-template-columns:93px 1fr;gap:12px;}.snippet-context dt{font-weight:500;color:#718069;}.snippet-context dd{margin:0;color:#45594b;}.snippet-footer{display:flex;align-items:flex-start;justify-content:space-between;margin-top:23px;padding-top:13px;border-top:1px solid #edf0e9;gap:16px;}.evidence-details{font-size:11px;color:var(--muted);flex:1;min-width:0;}.evidence-details>summary{display:flex;align-items:center;gap:6px;padding:8px 0;color:#59704e;list-style:none;}.evidence-quote{padding:12px 0;}.evidence-quote>p{font-size:10px;color:#7c8b75;margin-bottom:8px;}blockquote{margin:12px 0;font-size:12px;line-height:1.75;color:#55634f;white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f0;border-radius:7px;padding:14px 16px;}.correction-editor textarea{font-size:13px;}.edit-details{font-size:12px;margin-top:14px;color:var(--muted);}.edit-details label{margin-top:14px;color:var(--ink);}.review-next{margin-top:18px;color:#7a6125;font-size:11px;}.excluded-row{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;background:#eff2ec;border-radius:9px;color:#788272;gap:20px;font-size:12px;}.excluded-row>span{text-decoration:line-through;}.add-knowledge{display:flex;align-items:center;justify-content:center;gap:8px;border:1px dashed #c6d3bd;border-radius:10px;background:transparent;color:#5c7850;width:100%;padding:17px;margin:20px 0;font-size:12px;}.add-knowledge:hover{background:#eef3e8;}.completion-line{display:flex;align-items:center;gap:17px;padding:24px 0;}.completion-icon{width:43px;height:43px;border-radius:50%;background:#e5efd9;color:#496f34;display:grid;place-items:center;flex:none;}.completion-line h2{font-size:17px;}.completion-line p{font-size:12px;color:var(--muted);margin-top:4px;}
++.previous-section{margin-top:32px;padding-top:30px;border-top:1px solid var(--line);}.previous-section>h2{margin-bottom:14px;}.empty-inline{display:flex;align-items:flex-start;gap:14px;background:#eef3e8;border-radius:10px;padding:22px;color:#627559;margin:18px 0;}.empty-inline>svg{flex:none;margin-top:2px;}.empty-inline p{font-size:12px;line-height:1.7;}.comparison{border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin:18px 0;background:white;}.comparison-columns{display:grid;grid-template-columns:1fr 1fr;gap:30px;}.comparison-columns h3{font-size:14px;margin:9px 0;}.comparison-columns p{font-size:12px;line-height:1.7;margin:10px 0;}.comparison-columns details{font-size:11px;color:var(--muted);}.comparison-columns select{font-size:12px;}.comparison-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}.comparison-done{display:flex;align-items:center;gap:8px;color:#4c713e;font-size:12px;margin-top:18px;}.expert-tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:-20px 0 34px;}.expert-tabs button{display:flex;gap:8px;align-items:center;padding:13px 16px;border:0;background:none;color:var(--muted);font-size:12px;border-bottom:2px solid transparent;}.expert-tabs .active{border-bottom-color:var(--forest);color:var(--forest);}.question-list{display:grid;gap:18px;}.question-item{border:1px solid var(--line);border-radius:var(--radius);padding:24px;background:white;}.question-item h2{font-size:17px;margin:17px 0 20px;}.question-item.accepted{border-color:#c5d6b6;}.answer-copy{font-size:14px;line-height:1.8;margin-bottom:15px;}.question-item .row-between{margin-top:16px;flex-wrap:wrap;}.question-item>.row-between:first-child{margin-top:0;}.answer-label{color:var(--muted);font-weight:400;}.finish-mark{display:grid;place-items:center;width:54px;height:54px;border:1px solid #c5d8b4;border-radius:15px;background:#eaf2df;color:#587f38;margin-bottom:25px;}.memory-summary{display:flex;gap:45px;padding:24px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:35px;}.memory-summary>div{display:flex;flex-direction:column;gap:4px;}.memory-summary strong{font-size:23px;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}.memory-summary span{font-size:11px;color:var(--muted);}.test-preparation{margin-top:30px;}.test-preparation .section-label{align-items:flex-start;}.test-preparation .section-label p{margin-top:6px;max-width:57ch;}.test-preparation .section-label>svg{color:#769659;flex:none;}.scenario-previews{margin-top:20px;}.scenario-preview{display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line);padding:20px 0;flex-wrap:wrap;}.scenario-number{border:1px solid #d0dcc7;width:30px;height:30px;border-radius:8px;font-size:11px;color:#6b835b;display:grid;place-items:center;flex:none;}.scenario-preview-copy{flex:1;min-width:150px;}.scenario-preview h3{font-size:13px;}.scenario-preview-copy p{font-size:10px;color:var(--muted);margin-top:4px;}.scenario-tools{display:flex;gap:24px;padding:14px 0;}.scenario-editor{width:100%;border:1px solid var(--line);padding:23px;border-radius:var(--radius);background:white;margin:10px 0;}.scenario-editor>label{margin-top:18px;}.scenario-editor fieldset{border:0;padding:0;margin:20px 0;}.scenario-editor legend{font-size:12px;font-weight:600;margin-bottom:5px;}.choice-edit{display:flex;align-items:center;gap:12px;}.choice-edit input:not([type=radio]){height:42px;font-size:12px;}.linked-guidance{background:#f0f5e9;padding:16px;border-radius:8px;margin-top:16px;font-size:12px;}.linked-guidance strong{font-size:10px;font-weight:600;}.linked-guidance p{margin-top:7px;}.run-test-callout{display:flex;align-items:center;justify-content:space-between;gap:28px;background:#edf3e4;border-radius:12px;padding:24px;margin-top:24px;}.run-test-callout h3{font-size:14px;}.run-test-callout p{font-size:11px;margin-top:6px;color:#607452;}.run-test-callout .primary{flex:none;}.open-questions-note{display:flex;align-items:flex-start;gap:9px;color:var(--muted);margin-top:25px;font-size:11px;}.open-questions-note>svg{flex:none;margin-top:1px;}.publication-bar{display:flex;align-items:center;justify-content:space-between;gap:25px;padding-top:28px;margin-top:28px;border-top:1px solid var(--line);}.publication-bar h3{font-size:14px;}.publication-bar p{font-size:11px;color:var(--muted);margin-top:5px;}.publication-bar button{flex:none;}
++.test-heading{margin-top:27px;}.test-case-tabs{display:grid;gap:10px;margin:25px 0;}.test-case-tabs>button{display:flex;align-items:center;gap:13px;text-align:left;background:white;border:1px solid var(--line);border-radius:10px;padding:15px 18px;font-size:12px;color:var(--ink);}.test-case-tabs>button.selected{border-color:#789c60;background:#eef5e6;}.test-case-tabs>button>span{font-size:11px;color:#74856c;}.test-case-tabs small{font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap;}.test-case{background:white;border:1px solid var(--line);border-radius:var(--radius);padding:28px;}.test-case>h2{font-size:21px;}.scenario-facts{list-style:disc;padding-left:18px;font-size:13px;color:var(--muted);margin:18px 0 26px;}.scenario-facts li{margin:6px 0;}.choice-heading{font-size:15px;margin-bottom:15px;}.test-choices{display:grid;gap:10px;margin-bottom:22px;}.test-choices button{display:flex;align-items:center;gap:14px;text-align:left;border:1px solid #d9e0d3;padding:15px;background:white;border-radius:9px;color:var(--ink);font-size:13px;}.test-choices button span{border:1px solid #d4dfcd;width:27px;height:27px;border-radius:6px;display:grid;place-items:center;font-size:10px;flex:none;}.test-choices button.selected{background:#edf5e5;border-color:#779e5c;}.test-choices button.selected span{background:var(--forest);border-color:var(--forest);color:white;}.test-feedback{padding:22px;background:#eff5e9;border-radius:10px;margin-top:26px;}.test-feedback.incorrect{background:#f7f0df;}.test-feedback h3{font-size:15px;}.test-feedback p{font-size:13px;line-height:1.8;margin-top:10px;}.test-feedback details{font-size:11px;margin-top:16px;color:#5b7250;}.test-feedback .text-button{margin-top:12px;}.gap-message{background:#f6f0df;border-radius:12px;padding:25px;color:#776029;}.gap-message h3{margin:12px 0 9px;}.gap-message p{font-size:13px;line-height:1.75;margin-bottom:19px;}.attempt-history{margin-top:34px;}.attempt-history h3{font-size:14px;margin-bottom:14px;}.attempt-history>div{display:flex;gap:15px;align-items:center;font-size:11px;padding:12px 0;border-bottom:1px solid var(--line);}.attempt-history>div>span:first-child{flex:1;}.attempt-history small{font-size:10px;color:var(--muted);white-space:nowrap;}.notice{background:#f5efdf;color:#71551c;border-radius:9px;padding:15px 18px;display:flex;align-items:flex-start;justify-content:space-between;gap:15px;font-size:12px;margin:16px 0 26px;}.notice>button{background:none;border:0;padding:0;color:inherit;flex:none;}.processing-line{display:flex;align-items:center;gap:9px;color:#597449;font-size:12px;background:#edf3e6;border-radius:7px;padding:12px 16px;margin:16px 0;}.processing-line>svg{animation:pulse 1.5s ease-out infinite;}.workspace-footer{display:flex;align-items:center;justify-content:space-between;padding:22px 48px;border-top:1px solid var(--line);font-size:10px;color:#7c8879;}.workspace-footer>span:last-child{font-weight:600;font-size:12px;letter-spacing:-.035em;}.recovery-screen{max-width:640px;padding:80px 28px;margin:auto;}.recovery-screen>svg{margin-bottom:25px;color:var(--forest);}.recovery-screen p{margin:22px 0;color:var(--muted);}.loading-workspace{padding:80px 0;color:var(--muted);font-size:14px;}.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;}@keyframes pulse{50%{opacity:.45;}}
++@media(min-width:1500px){.workspace-content{padding-top:45px;}.workspace-rail{padding-top:45px;}.rail-journey{margin-top:85px;}}
++@media(max-width:1150px){:root{--rail:225px;}.workspace-rail{padding-left:20px;padding-right:18px;}.wordmark{font-size:21px;}.workspace-topbar{padding:0 30px;}.workspace-content{padding-left:34px;padding-right:34px;}.dataset-picker>span{display:none;}.rail-journey small{font-size:9px;}.rail-footer{padding-left:4px;padding-right:4px;}}
++@media(max-width:850px){:root{--rail:0px;}.workspace-rail{position:relative;width:auto;inset:auto;padding:20px 24px 16px;border-right:none;border-bottom:1px solid var(--line);display:block;}.workspace-shell{display:block;}.wordmark{font-size:22px;}.rail-tagline{font-size:10px;}.rail-journey,.rail-footer{display:none;}.workspace-main{margin:0;width:100%;}.workspace-topbar{height:auto;min-height:72px;padding:16px 24px;}.workspace-content{padding:26px 32px 45px;}.workspace-location{font-size:11px;}.segmented-progress{margin-bottom:34px;}.workspace-footer{padding:22px 28px;}.connection-menu>div{right:0;}.page-heading{margin-bottom:30px;}h1{font-size:40px;}.form-grid{gap:24px;}.step-actions{margin-top:32px;}.example-note{margin-top:-16px;}.workspace-main{min-height:calc(100vh - 100px);}}
++@media(max-width:520px){body{font-size:16px;}.workspace-rail{padding:19px 20px 15px;}.workspace-topbar{padding:14px 20px;gap:10px;min-height:67px;}.workspace-location>span,.workspace-location>svg{display:none;}.workspace-location>strong{font-size:11px;max-width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.topbar-actions{gap:9px;}.dataset-picker select{max-width:171px;padding:8px;font-size:11px;}.connection-menu>summary{width:30px;height:32px;}.connection-menu>div{width:min(310px,calc(100vw - 40px));}.workspace-content{padding:23px 20px 35px;}.progress-heading{font-size:10px;gap:8px;}.save-label{font-size:9px;}.progress-separator{margin:0 5px;}.segmented-progress{margin-bottom:32px;height:4px;gap:4px;}h1{font-size:34px;letter-spacing:-.03em;}.page-heading>p{font-size:13px;margin-top:16px;line-height:1.8;}.form-grid{grid-template-columns:1fr;gap:21px;}.profile-step .page-heading{margin-bottom:31px;}.owner-field{margin-top:26px;padding-top:25px;}input:not([type=radio]),textarea,select{font-size:16px;}label{font-size:12px;}.step-actions{gap:13px;}.step-actions>.inline-icon{font-size:10px;max-width:125px;}.step-actions>.inline-icon svg{flex:none;}.primary,.secondary{padding:12px 15px;font-size:12px;gap:8px;}.small{font-size:11px;padding:8px 11px;min-height:39px;}.step-actions>.primary{margin-left:auto;}.workspace-footer{padding:19px 20px;font-size:9px;gap:20px;}.dropzone{padding:31px 17px 24px;}.dropzone h2{font-size:18px;}.source-alternatives{font-size:10px;gap:8px;flex-wrap:wrap;}.source-alternatives button{font-size:11px;}.source-preview>summary{padding:13px;gap:9px;}.source-title strong{font-size:11px;}.read-status{font-size:9px;}.file-symbol{width:30px;height:35px;}.source-preview>summary>svg:last-child{display:none;}.source-body{padding:0 15px 15px;}.source-body textarea{font-size:14px;}.source-body .row-between{flex-wrap:wrap;}.section-label{gap:12px;}.section-label>span{font-size:9px;}.snippet{padding:18px;}.snippet>h2{font-size:16px;}.snippet-action{font-size:13px;}.snippet-context{font-size:11px;}.snippet-context>div{grid-template-columns:1fr;gap:3px;}.snippet-context dt{font-size:10px;}.snippet-top{margin-bottom:14px;}.decision{width:38px;height:38px;}.review-counts{gap:16px;font-size:10px;}.fixture-label{margin-left:0;width:100%;}.correction-editor .row-between{align-items:flex-start;flex-direction:column;}.comparison-columns{grid-template-columns:1fr;gap:18px;}.comparison{padding:18px;}.question-item{padding:19px;}.question-item h2{font-size:16px;}.question-item .row-between .text-button{font-size:11px;}.actions-with-help .field-help{max-width:220px;text-align:right;}.memory-summary{gap:27px;}.memory-summary span{font-size:10px;}.scenario-tools{gap:16px;}.scenario-tools button{font-size:11px;}.scenario-preview{gap:10px;}.scenario-preview-copy{min-width:130px;}.scenario-preview h3{font-size:12px;}.scenario-editor{padding:18px;}.scenario-editor label{font-size:11px;}.scenario-editor input:not([type=radio]){font-size:13px;}.run-test-callout{flex-direction:column;align-items:stretch;padding:20px;gap:18px;}.run-test-callout .primary{width:100%;}.publication-bar{align-items:flex-start;flex-direction:column;gap:16px;}.publication-bar button{width:100%;}.test-case{padding:20px;}.test-case>h2{font-size:19px;}.test-case-tabs>button{font-size:11px;gap:10px;}.test-case-tabs small{font-size:9px;}.test-choices button{font-size:12px;}.attempt-history>div{flex-wrap:wrap;gap:7px;}.attempt-history>div>span:first-child{flex-basis:100%;}.example-note{font-size:10px;align-items:flex-start;}.expert-tabs{margin-top:-10px;}.step-actions>.quiet{font-size:10px;text-align:right;}}
++@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;}}
++
++.question-origin{font-size:10px;color:var(--muted);margin:-9px 0 15px;}.question-source{font-size:11px;color:#5c7651;margin:0 0 18px;}
++
++.decision{width:44px;height:44px;min-width:44px;}.small{min-height:44px;}.connection-menu>summary{width:44px;height:44px;}.dataset-picker select{min-height:44px;}.text-button,.back-button{min-height:44px;}
++
++.source-warning{font-size:12px;color:var(--amber);padding:12px;background:#f6f0df;border-radius:7px;margin-bottom:14px;}
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index 1baaa42..77262dc 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -3,7 +3,7 @@ import "./globals.css";
+ 
+ export const metadata: Metadata = {
+   title: "BOOMERANG — Experience does not retire",
+-  description: "A fictional handover and practice demonstration.",
++  description: "Capture experience, review knowledge, and build a memory worth passing on.",
+ };
+ 
+ export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index 876eca6..5c7a46d 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,55 +1,109 @@
+ "use client";
++import { useEffect,useReducer,useRef,useState } from "react";
++import { CaptureSchema,ExtractionResultSchema,ScenarioSchema,type Capture,type DatasetId,type SourceSegment } from "@/lib/contracts";
++import { createSession,sessionReducer } from "@/lib/session";
++import { changed,findPrevious,validateEvidence,ownMaterial } from "@/lib/memory";
++import { datasets,exampleDraft } from "@/lib/demo";
++import { loadWorkspace,parseWorkspace,saveWorkspace,STORAGE_KEY } from "@/lib/storage";
++import { decodeText,fileKind,mediaDuration,validateFile } from "@/lib/uploads";
++import { ProfileStep } from "@/components/ProfileStep";
++import { UploadStep,type FileRow } from "@/components/UploadStep";
++import { SnippetReview } from "@/components/SnippetReview";
++import { ConfirmStep } from "@/components/ConfirmStep";
++import { QuestionsStep } from "@/components/QuestionsStep";
++import { FinishStep } from "@/components/FinishStep";
++import { TestRun } from "@/components/TestRun";
++import { Icon } from "@/components/Icon";
++const steps=[{title:"Your profile",detail:"The person behind the knowledge"},{title:"Add knowledge",detail:"Bring the material you have"},{title:"Review snippets",detail:"Check what we understood"},{title:"Confirm memory",detail:"Make corrections count"},{title:"Expert questions",detail:"Fill in the missing pieces"},{title:"Ready to share",detail:"Test it, then pass it on"}];
++export default function Home(){
++ const [state,dispatch]=useReducer(sessionReducer,undefined,createSession),[access,setAccess]=useState(""),[rows,setRows]=useState<FileRow[]>([]),[reading,setReading]=useState(false);
++ const stateRef=useRef(state);stateRef.current=state;
++ const [activeWork,setActiveWork]=useState("");const [reviewDirty,setReviewDirty]=useState(false),[questionDirty,setQuestionDirty]=useState(false);const c=state.workspace.capture;const pending=!!state.pending||reading;
++ const headingRef=useRef<HTMLDivElement>(null);const lastStep=useRef(c.step);
++ useEffect(()=>{try{dispatch({type:"hydrated",workspace:loadWorkspace()});}catch(error){if(error instanceof DOMException){dispatch({type:"hydrated",workspace:null});dispatch({type:"temporary"});}else dispatch({type:"recovery"});}},[]);
++ useEffect(()=>{if(state.hydration==="ready"&&!saveWorkspace(state.workspace)&&!state.temporary)dispatch({type:"temporary"});},[state.workspace,state.hydration,state.temporary]);
++ useEffect(()=>{if(lastStep.current!==c.step){headingRef.current?.focus();window.scrollTo({top:0,behavior:"instant"});lastStep.current=c.step;}},[c.step]);
++ function update(capture:Capture){dispatch({type:"capture",capture});}
++ function go(step:number){update({...c,step});}
++ function error(message:string){dispatch({type:"notice",message});}
++ function chooseDataset(datasetId:DatasetId|null){if((c.profile.name||c.sources.length||c.snippets.length)&&!window.confirm("Start a new capture? Your current draft will be replaced. Published memories will stay on this device."))return;dispatch({type:"newCapture",datasetId});setRows([]);}
++ async function post(path:string,body:unknown,form=false){
++  const response=await fetch(path,{method:"POST",headers:{"x-demo-access":access,...(!form?{"content-type":"application/json"}:{})},body:form?body as FormData:JSON.stringify(body)});
++  const data=await response.json();if(!response.ok)throw new Error(data.message??"Processing did not finish. Your work is kept; retry.");return data;
++ }
++ async function extract(){
++  const sources=c.sources.filter(s=>s.active!==false);if(!sources.length)return;
++  if(c.snippets.length&&!window.confirm("Rebuild the draft from these sources? Your current snippet review will be replaced; published memories are kept."))return;
++  const token=crypto.randomUUID();dispatch({type:"begin",token});setActiveWork("Finding skills in your sources");
++  try{
++   const sample=c.datasetId?datasets[c.datasetId]:null;
++   const isExample=!!sample&&sources.every(s=>sample.sources.some(original=>original.id===s.id&&original.text===s.text));
++   const result=ExtractionResultSchema.parse(isExample?exampleDraft({...c,sources}):await post("/api/extract",{sources}));
++   validateEvidence(result.rules,c.sources);
++   if(!result.rules.length){dispatch({type:"failed",token,message:"No supported guidance was found. Keep your notes and add a concrete decision, then try again."});return;}
++   dispatch({type:"draftResult",token,result});
++  }catch(e){dispatch({type:"failed",token,message:e instanceof Error?e.message:"The draft could not be read. Your sources are kept."});}
++  finally{setActiveWork("");}
++ }
++ async function readFiles(files:File[]){
++  if(pending||!files.length)return;
++  if(c.datasetId&&!window.confirm("Replace the prepared example with your own files? The example draft will be cleared after a file is read successfully; published memories are kept."))return;
++  if(c.sources.filter(s=>s.active!==false).length+files.length>6){error("Use at most six sources at a time. Remove a source before adding more.");return;}
++  const context={id:c.id,revision:c.revision};const freshRows=files.map(file=>({id:crypto.randomUUID(),file,status:"queued" as const}));
++  setRows(old=>[...old.filter(r=>!files.some(f=>f===r.file)),...freshRows]);setReading(true);setActiveWork("Reading your files");dispatch({type:"notice",message:null});
++  const successes:SourceSegment[]=[];
++  for(const row of freshRows){
++   setRows(old=>old.map(r=>r.id===row.id?{...r,status:"reading"}:r));
++   try{
++    const bytes=new Uint8Array(await row.file.arrayBuffer());const kind=validateFile(row.file.name,bytes,row.file.type);
++    if(kind==="audio"||kind==="video"){const duration=await mediaDuration(row.file);if(duration>60)throw new Error("Use a recording no longer than 60 seconds.");}
++    let text:string;let warnings:string[]=[];
++    if(kind==="text")text=decodeText(bytes);else{const form=new FormData();form.set("file",row.file);const data=await post("/api/read",form,true);text=data.text;warnings=data.warnings??[];}
++    if(!text.trim()||text.length>10000)throw new Error("Use a source with 1–10,000 readable characters.");
++    successes.push({id:crypto.randomUUID(),text,author:c.profile.name,name:row.file.name,kind,active:true,warnings});
++    setRows(old=>old.map(r=>r.id===row.id?{...r,status:"done"}:r));
+ 
+-import { useEffect, useReducer } from "react";
+-import { Capture } from "@/components/Capture";
+-import { Review } from "@/components/Review";
+-import { Practise } from "@/components/Practise";
+-import { fixtureExtraction, sourceS1 } from "@/lib/demo";
+-import { createSession, sessionReducer, type View } from "@/lib/session";
+-
+-const views: { id: View; label: string }[] = [
+-  { id: "capture", label: "Capture" }, { id: "review", label: "Review" }, { id: "practise", label: "Practise" },
+-];
+-
+-export default function Home() {
+-  const [state, dispatch] = useReducer(sessionReducer, undefined, createSession);
+-  // No storage is read or written in Task 1. Restoration is added at the persistence gate.
+-  useEffect(() => { dispatch({ type: "hydrated" }); }, []);
+-
+-  function extractFixture() {
+-    const token = crypto.randomUUID();
+-    const sources = [{ ...sourceS1, text: state.incident }];
+-    dispatch({ type: "extractionStarted", token, sources: [sourceS1] });
+-    try {
+-      const result = fixtureExtraction(sources);
+-      dispatch({ type: "extractionSucceeded", token, draftId: crypto.randomUUID(), result });
+-    } catch (error) {
+-      dispatch({ type: "extractionFailed", token, message: error instanceof Error ? error.message : "Fixture unavailable." });
+-    }
++   }catch(e){setRows(old=>old.map(r=>r.id===row.id?{...r,status:"error",error:e instanceof Error?e.message:"Could not read this file. Try another copy."}:r));}
+   }
+-
+-  return <div className="app-shell">
+-    <header className="site-header">
+-      <div className="flex flex-wrap items-center justify-between gap-4">
+-        <div><a href="/" className="brand">BOOMERANG<span aria-hidden="true">↗</span></a><p className="tagline">Experience does not retire.</p></div>
+-        <div className="flex flex-wrap items-center gap-3"><span className="badge">Demo</span><span className="badge">Not published</span><span className="badge amber">{state.bundle.mode === "fixture" ? "Fixture replay" : "Live AI"}</span></div>
+-      </div>
+-      <div className="header-controls">
+-        <nav aria-label="Handover views" className="flex gap-1">{views.map(view => <button className="nav-button" key={view.id} aria-current={state.view === view.id ? "page" : undefined} disabled={state.hydration !== "ready"} onClick={() => dispatch({ type: "view", view: view.id })}>{view.label}</button>)}</nav>
+-        <details className="session-menu"><summary>Session settings</summary><div className="space-y-4">
+-          <label>Demo mode<select value={state.bundle.mode} disabled={state.hydration !== "ready"} onChange={e => dispatch({ type: "mode", mode: e.target.value as "live" | "fixture" })}><option value="fixture">Fixture replay</option><option value="live">Live AI</option></select></label>
+-          <p className="muted">Changing mode starts a new session.</p>
+-          <button className="secondary" disabled={state.hydration !== "ready"} onClick={() => { if (window.confirm("Reset this demo? Saved guidance, attempts and questions will be removed.")) dispatch({ type: "reset" }); }}>Reset demo</button>
+-        </div></details>
+-      </div>
+-    </header>
+-    <main id="main-content">
+-      <p className="temporary">Temporary session: changes will be lost on reload.</p>
+-      <div role="status" aria-live="polite">{state.notice && <p className="notice">{state.notice}</p>}</div>
+-      {state.hydration !== "ready" ? <p role="status">Preparing the demo…</p> : state.view === "capture"
+-        ? <Capture state={state} dispatch={dispatch} onExtract={extractFixture} />
+-        : state.view === "review" ? <Review state={state} /> : <Practise />}
+-    </main>
+-    <footer>BOOMERANG · Fictional handover demonstration</footer>
+-  </div>;
++  const latest=stateRef.current.workspace.capture;
++  if(successes.length&&latest.id===context.id&&latest.revision===context.revision){const next=changed(ownMaterial(latest));next.sources.push(...successes);update(next);}
++  else if(successes.length)error("Newer changes were kept. Add the files again to this capture.");
++  setReading(false);setActiveWork("");
++ }
++ async function generateScenarios(){
++  if(c.scenarios.length&&!window.confirm("Replace the current scenario proposals? Previous test results stay in history."))return;
++  const token=crypto.randomUUID();dispatch({type:"begin",token});setActiveWork("Preparing scenario proposals");
++  try{
++   const rules=c.snippets.filter(s=>s.status==="approved").map(s=>s.rule);const ids=new Set(rules.flatMap(r=>r.evidence.map(e=>e.sourceId)));const sources=c.sources.filter(s=>ids.has(s.id));
++   const data=await post("/api/scenarios",{rules,sources});const scenarios=ScenarioSchema.array().max(3).parse(data.scenarios);
++   if(!scenarios.length)throw new Error("No supported scenario could be proposed. Write a scenario or add more concrete guidance.");
++   dispatch({type:"scenarioResult",token,scenarios});
++  }catch(e){dispatch({type:"failed",token,message:e instanceof Error?e.message:"Could not prepare scenarios."});}finally{setActiveWork("");}
++ }
++ const kept=c.snippets.filter(s=>s.status!=="excluded");const reviewReady=kept.length>0&&kept.every(s=>s.status==="approved"||s.status==="revised");const allApproved=kept.length>0&&kept.every(s=>s.status==="approved");
++ const completed=[!!(c.profile.name.trim()&&c.profile.position.trim()&&c.profile.organization.trim()&&c.profile.owner.trim()),!!c.sources.filter(s=>s.active!==false).length,reviewReady,allApproved&&c.comparisonComplete,!questionDirty&&(c.step===5||c.questions.some(q=>q.status==="accepted")),state.workspace.publications.some(p=>p.captureId===c.id&&p.revision===c.revision)];
++ if(state.hydration==="recovery")return <div className="recovery-screen"><Icon name="shield" size={36}/><h1>Your saved workspace needs attention.</h1><p>The saved data could not be validated. It has not been overwritten.</p><p>Reset removes this browser’s saved workspace. Keep a copy first if you need to recover it.</p><button className="primary" onClick={()=>{if(window.confirm("Remove the invalid workspace and start fresh?")){try{localStorage.removeItem(STORAGE_KEY);}catch{}dispatch({type:"reset"});}}}>Reset this workspace</button></div>;
++ return <div className="workspace-shell">
++  <aside className="workspace-rail"><a className="wordmark" href="/" aria-label="BOOMERANG home"><svg viewBox="0 0 30 30" width="30" height="30" fill="none" aria-hidden="true"><path d="m6 24 8-18 10 9-13 2" stroke="currentColor" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round"/></svg>boomerang<span className="brand-period">.</span></a><p className="rail-tagline">Experience does not retire.</p>
++   <div className="rail-journey"><div className="rail-section-title">BUILD YOUR MEMORY</div><nav aria-label="Capture progress"><ol>{steps.map((step,i)=><li key={step.title} className={`${c.step===i&&!state.testing?"active":""} ${completed[i]?"complete":""}`}><button disabled={pending||state.hydration!=="ready"||i>c.step&&(!completed.slice(0,i).every(Boolean)||reviewDirty||questionDirty||(i===2&&!c.snippets.length))} aria-current={c.step===i&&!state.testing?"step":undefined} onClick={()=>{dispatch({type:"testing",value:false});go(i);}}><span className="step-number">{completed[i]?<Icon name="check" size={14}/>:i+1}</span><span><strong>{step.title}</strong><small>{step.detail}</small></span></button></li>)}</ol></nav></div>
++   <div className="rail-footer"><div className="rail-footer-icon"><Icon name="book" size={21}/></div><p>A little of what you know.<br/><strong>A lot for who comes next.</strong></p><span>Made for the knowledge worth keeping.</span></div>
++  </aside>
++  <div className="workspace-main"><header className="workspace-topbar"><div className="workspace-location"><span>Your workspace</span><Icon name="chevron" size={13}/><strong>{c.profile.name?`${c.profile.name.split(" ")[0]}’s memory`:"New memory"}</strong></div><div className="topbar-actions"><label className="dataset-picker"><span>Try an example</span><select aria-label="Try an example" value={c.datasetId??""} disabled={pending||state.hydration!=="ready"} onChange={e=>chooseDataset((e.target.value||null) as DatasetId|null)}><option value="">Your own knowledge</option><option value="keller-elektro">Keller Elektro</option><option value="nordform">Nordform GmbH</option></select></label><details className="connection-menu"><summary aria-label="Connection settings" title="Connection settings"><Icon name="settings" size={19}/></summary><div><h3>Connection settings</h3><label>Demo access code<input type="password" autoComplete="off" value={access} onChange={e=>setAccess(e.target.value)} placeholder="Enter for live processing"/></label><p>Kept in memory only. Provider credentials are configured on the server.</p><button className="text-button" disabled={pending} onClick={()=>chooseDataset(null)}><Icon name="plus" size={15}/>Start a new memory</button><button className="text-button danger" disabled={pending} onClick={()=>{if(window.confirm("Reset all local captures and published memories? This removes the saved workspace on this device.")){dispatch({type:"reset"});setRows([]);}}}>Reset workspace</button></div></details></div></header>
++   <main className="workspace-content"><div className="progress-heading"><span>{state.testing?"Manual test run":`Step ${c.step+1} of ${steps.length}`}<span className="progress-separator">/</span>{state.testing?`Revision ${c.revision}`:steps[c.step].title}</span><span className="save-label"><span className="save-dot"/>{state.hydration==="loading"?"Restoring workspace…":state.temporary?"Temporary session":"Saved on this device"}</span></div><div className="segmented-progress" role="progressbar" aria-label="Capture progress" aria-valuemin={0} aria-valuemax={6} aria-valuenow={completed.filter(Boolean).length}>{steps.map((s,i)=><span key={s.title} className={completed[i]?"done":c.step===i?"current":""}/>)}</div>
++    {c.datasetId&&<div className="example-note"><Icon name="file" size={15}/><span>{datasets[c.datasetId].label} · Fictional example dataset. Prepared drafts are labelled; your uploads use live processing.</span></div>}
++    {state.temporary&&<div className="notice">Storage is unavailable. Your changes stay in this session and will be lost on reload.</div>}
++    {state.notice&&<div className="notice" role="alert"><p>{state.notice}</p><button aria-label="Dismiss message" onClick={()=>dispatch({type:"notice",message:null})}><Icon name="close" size={16}/></button></div>}
++    <div role="status" aria-live="polite" className={activeWork?"processing-line":"visually-hidden"}>{activeWork&&<Icon name="spark" size={17}/>} {activeWork}</div>
++    <div ref={headingRef} tabIndex={-1} className="step-focus">
++    {state.hydration!=="ready"?<div className="loading-workspace">Restoring your workspace…</div>:state.testing?<TestRun capture={c} onChange={update} onClose={()=>dispatch({type:"testing",value:false})} onQuestions={()=>{dispatch({type:"testing",value:false});go(4);}}/>:<div key={c.id}>
++     <div hidden={c.step!==0}><ProfileStep capture={c} onChange={update} onNext={()=>go(1)}/></div>
++     <div hidden={c.step!==1}><UploadStep capture={c} onChange={update} onFiles={readFiles} onRemoveRow={id=>setRows(old=>old.filter(r=>r.id!==id))} rows={rows} busy={pending} onNext={extract} onBack={()=>go(0)}/></div>
++     <div hidden={c.step!==2}><section className="step-surface wide"><div className="page-heading"><h1>Did I understand<br/><span>you correctly?</span></h1><p>Review each snippet. Approve what’s right, adjust what isn’t, and add anything we missed.</p></div><div className="review-counts"><span><strong>{kept.filter(s=>s.status==="approved").length}</strong> approved</span><span><strong>{kept.filter(s=>s.status==="revised").length}</strong> corrected</span><span><strong>{kept.filter(s=>s.status==="pending"||s.status==="correction").length}</strong> to review</span>{c.origin==="example"&&<span className="fixture-label">Prepared example draft</span>}</div><SnippetReview capture={c} onChange={update} onDirtyChange={setReviewDirty}/><div className="step-actions"><button className="back-button" onClick={()=>go(1)}><Icon name="back" size={17}/>Sources</button><button className="primary" disabled={!reviewReady||reviewDirty} onClick={()=>go(3)}>Review corrections<Icon name="arrow" size={18}/></button></div></section></div>
++     <div hidden={c.step!==3}><ConfirmStep capture={c} onChange={update} previous={findPrevious(c,state.workspace.publications)} onBack={()=>go(2)} onNext={()=>update({...c,comparisonComplete:true,step:4})}/></div>
++     <div hidden={c.step!==4}><div className="expert-tabs"><button onClick={()=>go(2)}><Icon name="book" size={16}/>Memory</button><button className="active"><Icon name="question" size={16}/>Expert questions</button></div><QuestionsStep capture={c} onChange={update} onDirtyChange={setQuestionDirty} onNext={()=>go(5)} onBack={()=>go(3)}/></div>
++     <div hidden={c.step!==5}><FinishStep capture={c} onChange={update} publications={state.workspace.publications} onGenerate={generateScenarios} busy={pending} onTest={()=>dispatch({type:"testing",value:true})} onPublish={()=>dispatch({type:"publish",now:new Date().toISOString()})} onBack={()=>go(4)}/></div>
++    </div>}</div>
++   </main><footer className="workspace-footer"><span>Keep the experience. Pass on the confidence.</span><span>boomerang</span></footer>
++  </div>
++ </div>;
+ }
+diff --git a/src/components/Capture.tsx b/src/components/Capture.tsx
+deleted file mode 100644
+index 46bc0a9..0000000
+--- a/src/components/Capture.tsx
++++ /dev/null
+@@ -1,36 +0,0 @@
+-import { sourceS1 } from "@/lib/demo";
+-import type { SessionEvent, SessionState } from "@/lib/session";
+-
+-type Props = { state: SessionState; dispatch: React.Dispatch<SessionEvent>; onExtract: () => void };
+-
+-export function Capture({ state, dispatch, onExtract }: Props) {
+-  const fixture = state.bundle.mode === "fixture";
+-  return <section aria-labelledby="capture-title" className="space-y-6">
+-    <div><p className="eyebrow">01 / Capture experience</p><h1 id="capture-title">Start with a real decision.</h1>
+-      <p className="intro">Capture what an experienced colleague notices, does and knows to avoid.</p></div>
+-    <div className="panel space-y-6">
+-      <div className="grid gap-6 sm:grid-cols-2">
+-        <label>Expert name<input value={state.expert} onChange={e => dispatch({ type: "field", field: "expert", value: e.target.value })} /></label>
+-        <label>Continuing content owner<input value={state.contentOwner} onChange={e => dispatch({ type: "field", field: "contentOwner", value: e.target.value })} /></label>
+-      </div>
+-      <div><h2>Demo Hall · Microphone handover</h2><p className="fictional">Fictional training example</p></div>
+-      <label htmlFor="incident">Incident notes</label>
+-      <p id="incident-prompts" className="muted">What happened? What did you notice? What did you do and why? When should someone stop? How did you know it worked?</p>
+-      <textarea id="incident" rows={8} value={state.incident} aria-describedby="incident-prompts incident-count" onChange={e => dispatch({ type: "field", field: "incident", value: e.target.value })} />
+-      <div className="flex flex-wrap items-center justify-between gap-4">
+-        <p id="incident-count" className="muted">{state.incident.length.toLocaleString()} characters</p>
+-        <button className="secondary" onClick={() => dispatch({ type: "field", field: "incident", value: sourceS1.text })}>Use demo incident</button>
+-      </div>
+-      <div className="divider space-y-3">
+-        <p className="muted">{fixture
+-          ? "Fixture replay uses the prepared S1 incident. It produces a preview draft for human review."
+-          : "Live extraction is unavailable in this build. Switch to Fixture replay to explore the prepared example."}</p>
+-        <button disabled={!fixture || !state.incident.trim() || !!state.pending || !state.expert.trim()} onClick={onExtract}>
+-          {state.pending ? "Extracting…" : fixture ? "Extract fixture draft" : "Extract draft"}
+-        </button>
+-      </div>
+-    </div>
+-    <details className="panel"><summary>Available source · S1</summary><p className="source-text">{state.bundle.sources[0].text}</p><p className="muted">Author: {state.bundle.sources[0].author}</p></details>
+-    <section className="panel"><h2>Expert questions</h2><p className="muted">No questions yet. Uncovered practice cases will return here for the expert.</p></section>
+-  </section>;
+-}
+diff --git a/src/components/Practise.tsx b/src/components/Practise.tsx
+deleted file mode 100644
+index 092463e..0000000
+--- a/src/components/Practise.tsx
++++ /dev/null
+@@ -1,13 +0,0 @@
+-import { scenarios } from "@/lib/demo";
+-
+-export function Practise() {
+-  return <section aria-labelledby="practise-title" className="space-y-6">
+-    <div><p className="eyebrow">03 / Practise decisions</p><h1 id="practise-title">Know the next step.</h1><p className="intro">Put reviewed experience to work, one situation at a time.</p></div>
+-    <div className="panel"><h2>Publish a reviewed playbook first.</h2><p className="muted">Practice becomes available when an expert has approved and published guidance.</p></div>
+-    <div className="grid gap-6 sm:grid-cols-2">{scenarios.map(s => <article className="panel space-y-4" key={s.id}>
+-      <p className="eyebrow">Demo Hall · {s.id}</p><h2>{s.title}</h2><p className="fictional">Fictional training example</p>
+-      <p className="muted">Not covered · No published guidance</p><button disabled>Start practice</button>
+-    </article>)}</div>
+-    <div className="panel"><h2>Attempt history</h2><p className="muted">No attempts yet.</p></div>
+-  </section>;
+-}
+diff --git a/src/components/Review.tsx b/src/components/Review.tsx
+deleted file mode 100644
+index 91c2e6f..0000000
+--- a/src/components/Review.tsx
++++ /dev/null
+@@ -1,26 +0,0 @@
+-import type { SessionState } from "@/lib/session";
+-
+-export function Review({ state }: { state: SessionState }) {
+-  const draft = state.bundle.draft;
+-  return <section aria-labelledby="review-title" className="space-y-6">
+-    <div><p className="eyebrow">02 / Review guidance</p><h1 id="review-title">Make experience teachable.</h1><p className="intro">Check each decision against its source before approving it.</p></div>
+-    {!draft ? <div className="panel"><h2>No draft yet</h2><p className="muted">Capture an incident and extract a draft to see proposed guidance here.</p></div> : <>
+-      <div className="notice">Fixture preview · Unapproved · Review and publication controls are not available yet.</div>
+-      {draft.rules.map(rule => <article className="panel space-y-6" key={rule.id}>
+-        <div className="flex flex-wrap items-start justify-between gap-4"><h2>{rule.situation}</h2><span className="badge amber">Draft</span></div>
+-        <div className="grid gap-6 md:grid-cols-2">
+-          <dl className="space-y-4">
+-            <div><dt>Notice</dt><dd>{rule.conditions.join("; ") || "Not provided"}</dd></div>
+-            <div><dt>Do</dt><dd>{rule.action}</dd></div>
+-            <div><dt>Why</dt><dd>{rule.rationale ?? "Not provided"}</dd></div>
+-            <div><dt>Stop</dt><dd>{rule.exceptions.join("; ") || "Not provided"}</dd></div>
+-          </dl>
+-          <div className="evidence"><p className="eyebrow">Source evidence</p>{rule.evidence.map((e, i) => <div key={i}>
+-            <blockquote>{e.quote}</blockquote><details><summary>Read {e.sourceId} · {state.bundle.sources.find(s => s.id === e.sourceId)?.author}</summary><p className="source-text">{state.bundle.sources.find(s => s.id === e.sourceId)?.text}</p></details>
+-          </div>)}</div>
+-        </div>
+-      </article>)}
+-      <div className="panel"><h2>Not ready to publish</h2><p className="muted">Every card and its case applicability need human approval. Nothing in this preview is published guidance.</p></div>
+-    </>}
+-  </section>;
+-}
+diff --git a/src/lib/contracts.ts b/src/lib/contracts.ts
+index 2023204..dc38ad0 100644
+--- a/src/lib/contracts.ts
++++ b/src/lib/contracts.ts
+@@ -1,59 +1,30 @@
+ import { z } from "zod";
+ 
+-const text = z.string().refine(value => value.trim().length > 0, "Must not be blank");
+-const id = text;
+-const version = z.number().int().positive();
+-const unique = <T extends { id: string }>(items: T[]) => new Set(items.map(item => item.id)).size === items.length;
+-
+-export const SourceSegmentSchema = z.object({ id, text, author: text }).strict();
+-export const EvidenceSchema = z.object({ sourceId: id, quote: text }).strict();
+-export const RuleSchema = z.object({
+-  id, situation: text, conditions: z.array(text), action: text,
+-  rationale: text.nullable(), exceptions: z.array(text), evidence: z.array(EvidenceSchema).min(1),
+-}).strict();
+-export const CaseLinkSchema = z.object({ caseId: id, ruleId: id, reviewer: text }).strict();
+-export const DraftSchema = z.object({
+-  id, revision: z.number().int().nonnegative(), baseVersion: z.number().int().nonnegative(),
+-  rules: z.array(RuleSchema).refine(unique, "Duplicate rule IDs"),
+-  approvedRuleIds: z.array(id), caseLinks: z.array(CaseLinkSchema),
+-}).strict();
+-export const KnowledgeVersionSchema = z.object({
+-  version, sources: z.array(SourceSegmentSchema).refine(unique, "Duplicate source IDs"),
+-  rules: z.array(RuleSchema).min(1).refine(unique, "Duplicate rule IDs"),
+-  caseLinks: z.array(CaseLinkSchema), approvedBy: text, approvedAt: z.iso.datetime(), contentOwner: text,
+-}).strict();
+-export const ScenarioSchema = z.object({
+-  id, title: text, facts: z.array(text).min(1),
+-  options: z.array(z.object({ id, label: text }).strict()).min(1).refine(unique, "Duplicate option IDs"),
+-  correctOptionId: id,
+-}).strict().refine(s => s.options.some(o => o.id === s.correctOptionId), "Unknown correct option");
+-export const AttemptSchema = z.object({
+-  id, scenarioId: id, knowledgeVersion: version, selectedOptionId: id.nullable(),
+-  outcome: z.enum(["correct", "incorrect", "gap"]), ruleId: id.nullable(),
+-}).strict();
+-export const GapSchema = z.object({
+-  id, scenarioId: id, fromVersion: version, question: text, owner: text,
+-  status: z.enum(["open", "closed"]), resolvedVersion: version.nullable(),
+-}).strict();
+-export const SessionBundleSchema = z.object({
+-  schemaVersion: z.literal(1), mode: z.enum(["live", "fixture"]),
+-  sources: z.array(SourceSegmentSchema).refine(unique, "Duplicate source IDs"),
+-  draft: DraftSchema.nullable(), versions: z.array(KnowledgeVersionSchema),
+-  attempts: z.array(AttemptSchema).refine(unique, "Duplicate attempt IDs"),
+-  gaps: z.array(GapSchema).refine(unique, "Duplicate gap IDs"),
+-}).strict();
+-export const ExtractionResultSchema = z.object({
+-  rules: z.array(RuleSchema).max(6).refine(unique, "Duplicate rule IDs"), questions: z.array(text).max(3),
+-}).strict();
+-
++export const Nonblank = z.string().refine(v => v.trim().length > 0, "Must not be blank");
++const uid = Nonblank;
++const unique = <T extends {id:string}>(items:T[]) => new Set(items.map(x=>x.id)).size === items.length;
++export const DatasetIdSchema = z.enum(["keller-elektro", "nordform"]);
++export const ProfileSchema = z.object({name:z.string(),position:z.string(),organization:z.string(),experience:z.number().min(0).max(100).nullable(),owner:z.string()}).strict();
++export const SourceSegmentSchema = z.object({id:uid,text:Nonblank,author:Nonblank,name:z.string().optional(),kind:z.enum(["text","document","image","audio","video"]).optional(),active:z.boolean().optional(),warnings:z.array(z.string()).optional()}).strict();
++export const EvidenceSchema = z.object({sourceId:uid,quote:Nonblank}).strict();
++export const RuleSchema = z.object({id:uid,situation:Nonblank,conditions:z.array(Nonblank),action:Nonblank,rationale:Nonblank.nullable(),exceptions:z.array(Nonblank),evidence:z.array(EvidenceSchema).min(1)}).strict();
++export const ExtractionResultSchema = z.object({origin:z.enum(["live","example"]).default("live"),rules:z.array(RuleSchema).max(6).refine(unique),questions:z.array(Nonblank).max(3)}).strict();
++export const SnippetSchema = z.object({id:uid,rule:RuleSchema,revision:z.number().int().nonnegative(),approvedRevision:z.number().int().nonnegative().nullable(),status:z.enum(["pending","correction","revised","approved","excluded"])}).strict();
++export const QuestionSchema = z.object({id:uid,text:Nonblank,answer:z.string(),status:z.enum(["open","draft","accepted"]),origin:z.enum(["extraction","expert","scenario","example"]).optional(),sourceIds:z.array(uid).optional(),fromRevision:z.number().int().nonnegative().optional(),scenarioId:uid.optional(),revision:z.number().int().nonnegative(),approvedRevision:z.number().int().nonnegative().nullable()}).strict();
++export const ScenarioSchema = z.object({id:uid,title:Nonblank,facts:z.array(Nonblank).min(1),options:z.array(z.object({id:uid,label:Nonblank}).strict()).length(3).refine(unique),correctOptionId:uid,ruleId:uid.nullable(),approved:z.boolean()}).strict().refine(s=>s.options.some(o=>o.id===s.correctOptionId),"Unknown answer choice");
++export const AttemptSchema = z.object({id:uid,scenarioId:uid,captureRevision:z.number().int().nonnegative(),selectedOptionId:uid.nullable(),outcome:z.enum(["correct","incorrect","gap"]),ruleId:uid.nullable(),scenario:ScenarioSchema,rule:RuleSchema.nullable()}).strict();
++export const ComparisonSchema = z.object({previousId:uid,ruleId:uid,decision:z.enum(["keep","new","combine","different"])}).strict();
++export const CaptureSchema = z.object({id:uid,revision:z.number().int().nonnegative(),datasetId:DatasetIdSchema.nullable(),origin:z.enum(["live","example"]).default("live"),profile:ProfileSchema,step:z.number().int().min(0).max(5),sources:z.array(SourceSegmentSchema).refine(unique),snippets:z.array(SnippetSchema).refine(unique),questions:z.array(QuestionSchema).refine(unique),scenarios:z.array(ScenarioSchema).refine(unique),attempts:z.array(AttemptSchema).refine(unique),comparisons:z.array(ComparisonSchema),comparisonComplete:z.boolean()}).strict();
++export const PublishedMemorySchema = z.object({id:uid,version:z.number().int().positive(),captureId:uid,revision:z.number().int().nonnegative(),datasetId:DatasetIdSchema.nullable(),profile:ProfileSchema,sources:z.array(SourceSegmentSchema).refine(unique),rules:z.array(RuleSchema).min(1).refine(unique),questions:z.array(QuestionSchema),scenarios:z.array(ScenarioSchema),publishedAt:z.iso.datetime(),previousId:uid.nullable()}).strict();
++export const WorkspaceSchema = z.object({schemaVersion:z.literal(2),capture:CaptureSchema,publications:z.array(PublishedMemorySchema).refine(unique)}).strict();
++export type DatasetId = z.infer<typeof DatasetIdSchema>;
++export type Profile = z.infer<typeof ProfileSchema>;
+ export type SourceSegment = z.infer<typeof SourceSegmentSchema>;
+-export type Evidence = z.infer<typeof EvidenceSchema>;
+ export type Rule = z.infer<typeof RuleSchema>;
+-export type CaseLink = z.infer<typeof CaseLinkSchema>;
+-export type Draft = z.infer<typeof DraftSchema>;
+-export type KnowledgeVersion = z.infer<typeof KnowledgeVersionSchema>;
+-export type Scenario = z.infer<typeof ScenarioSchema>;
+-export type Attempt = z.infer<typeof AttemptSchema>;
+-export type Gap = z.infer<typeof GapSchema>;
+-export type SessionBundle = z.infer<typeof SessionBundleSchema>;
+ export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
++export type Snippet = z.infer<typeof SnippetSchema>;
++export type Question = z.infer<typeof QuestionSchema>;
++export type Scenario = z.infer<typeof ScenarioSchema>;
++export type Capture = z.infer<typeof CaptureSchema>;
++export type PublishedMemory = z.infer<typeof PublishedMemorySchema>;
++export type Workspace = z.infer<typeof WorkspaceSchema>;
+diff --git a/src/lib/demo.ts b/src/lib/demo.ts
+index 1f64658..1656d2f 100644
+--- a/src/lib/demo.ts
++++ b/src/lib/demo.ts
+@@ -1,56 +1,252 @@
+-import { ExtractionResultSchema, ScenarioSchema, SessionBundleSchema, type SourceSegment, type SessionBundle } from "./contracts";
+-
+-export const sourceS1: SourceSegment = {
+-  id: "S1", author: "Alex",
+-  text: "At Demo Hall, when the presenter cannot be heard and the receiver shows no input, I check whether the handheld microphone is powered and unmuted. I check the simple visible controls first so we don't change unrelated mixer settings. If I smell burning, see damaged equipment, or cannot identify the setup, I stop and call the duty technician.",
+-};
+-
+-// Replay material is deliberately separate from the initial bundle and adapter.
+-export const sourceS2: SourceSegment = {
+-  id: "S2", author: "Alex",
+-  text: "If the receiver shows input but the room has no sound, I check the labelled channel's mute indicator. I do not change unfamiliar routing during a live session; I call the duty technician.",
++import type { Capture, DatasetId, ExtractionResult, Profile, Rule, Scenario, SourceSegment } from "./contracts";
++type Dataset = {label:string; profile:Profile; sources:SourceSegment[]; rules:Rule[]; question:string; scenarios:Scenario[]};
++export const datasets:Record<DatasetId,Dataset> = {
++  "keller-elektro": {
++    "label": "Keller Elektro",
++    "profile": {
++      "name": "Marta Keller",
++      "organization": "Keller Elektro",
++      "position": "Master electrician",
++      "owner": "Jonas Keller",
++      "experience": null
++    },
++    "sources": [
++      {
++        "id": "S1",
++        "text": "At a customer workshop, when the lights keep going out and the labelled main breaker has tripped, I see a new portable machine on the same labelled circuit. I unplug that machine and check that the breaker is cold and undamaged before I reset anything. I check that visible cause first so we do not open the panel or change other circuits and hide the cause. If I smell burning, the breaker is warm, or the labels do not match the room, I stop and call the utility emergency line. I know it worked when the lights stay on after the extra machine is on another labelled circuit.",
++        "author": "Marta Keller",
++        "name": "Example handover 1",
++        "kind": "text"
++      },
++      {
++        "id": "S2",
++        "text": "If the labelled breaker stays on but one labelled machine is dead, I check that machine's own labelled isolator before touching house wiring. If the isolator is already on, or the cable is damaged, I stop and call Jonas.",
++        "author": "Marta Keller",
++        "name": "Example handover 2",
++        "kind": "text"
++      }
++    ],
++    "rules": [
++      {
++        "id": "R1",
++        "situation": "Lights keep going out and the labelled main breaker has tripped",
++        "conditions": [
++          "A new portable machine is on the same labelled circuit. There is no burning smell. The breaker is cold and undamaged. The labels match the room."
++        ],
++        "action": "Unplug that machine and check that the breaker is cold and undamaged before resetting anything.",
++        "rationale": "Check the visible cause first so the panel is not opened and other circuits are not changed.",
++        "exceptions": [
++          "Stop and call the utility emergency line if there is a burning smell, the breaker is warm, or the labels do not match the room."
++        ],
++        "evidence": [
++          {
++            "sourceId": "S1",
++            "quote": "At a customer workshop, when the lights keep going out and the labelled main breaker has tripped, I see a new portable machine on the same labelled circuit. I unplug that machine and check that the breaker is cold and undamaged before I reset anything. I check that visible cause first so we do not open the panel or change other circuits and hide the cause. If I smell burning, the breaker is warm, or the labels do not match the room, I stop and call the utility emergency line. I know it worked when the lights stay on after the extra machine is on another labelled circuit."
++          }
++        ]
++      },
++      {
++        "id": "R2",
++        "situation": "The labelled breaker stays on, but one labelled machine is dead",
++        "conditions": [
++          "No burning smell and no damaged cable reported"
++        ],
++        "action": "Check that machine's own labelled isolator before touching house wiring.",
++        "rationale": "Check the machine's own labelled control first so house wiring is left unchanged.",
++        "exceptions": [
++          "Stop and call Jonas if the isolator is already on, or the cable is damaged."
++        ],
++        "evidence": [
++          {
++            "sourceId": "S2",
++            "quote": "If the labelled breaker stays on but one labelled machine is dead, I check that machine's own labelled isolator before touching house wiring. If the isolator is already on, or the cable is damaged, I stop and call Jonas."
++          }
++        ]
++      }
++    ],
++    "question": "At Keller Elektro, when the labelled breaker stays on but one machine is dead, what do you check, why, and when do you stop or escalate?",
++    "scenarios": [
++      {
++        "id": "C1",
++        "title": "Lights out, labelled breaker tripped",
++        "facts": [
++          "Lights out",
++          "Labelled breaker tripped",
++          "No burning smell"
++        ],
++        "options": [
++          {
++            "id": "C1-A",
++            "label": "Unplug the newly added machine and check the breaker"
++          },
++          {
++            "id": "C1-B",
++            "label": "Replace the breaker"
++          },
++          {
++            "id": "C1-C",
++            "label": "Wait for the lights to return"
++          }
++        ],
++        "correctOptionId": "C1-A",
++        "ruleId": null,
++        "approved": false
++      },
++      {
++        "id": "C2",
++        "title": "Breaker on, one machine dead",
++        "facts": [
++          "Breaker stays on",
++          "One labelled machine is dead",
++          "No hazard reported"
++        ],
++        "options": [
++          {
++            "id": "C2-A",
++            "label": "Check the session log"
++          },
++          {
++            "id": "C2-B",
++            "label": "Check the machine's labelled isolator"
++          },
++          {
++            "id": "C2-C",
++            "label": "Wait without checking"
++          }
++        ],
++        "correctOptionId": "C2-B",
++        "ruleId": null,
++        "approved": false
++      }
++    ]
++  },
++  "nordform": {
++    "label": "Nordform GmbH",
++    "profile": {
++      "name": "Helmut Kruse",
++      "organization": "Nordform GmbH",
++      "position": "Press-brake setter",
++      "owner": "Anja Berger",
++      "experience": null
++    },
++    "sources": [
++      {
++        "id": "S1",
++        "text": "At Nordform, when a repeat customer part comes off the brake with the wrong angle, I check the labelled tool in the machine against the last approved setup sheet, and the material grade printed on the job card, before anyone edits the program. I check the sheet first so a wrong tool is not saved as a new program. If the guard is open, the grade is not on the card, or the tool code does not match the sheet, I stop and call Anja. I know it worked when the next part matches the angle on the approved sheet.",
++        "author": "Helmut Kruse",
++        "name": "Example handover 1",
++        "kind": "text"
++      },
++      {
++        "id": "S2",
++        "text": "If the tool and the material grade match the approved sheet but the angle is still wrong, I check whether the labelled back-gauge position on the sheet was actually set. I do not change the program during the run. If the gauge already matches the sheet, I stop and call Anja.",
++        "author": "Helmut Kruse",
++        "name": "Example handover 2",
++        "kind": "text"
++      }
++    ],
++    "rules": [
++      {
++        "id": "R1",
++        "situation": "A repeat customer part comes off the brake with the wrong angle",
++        "conditions": [
++          "The guard is closed. The material grade on the job card matches the sheet."
++        ],
++        "action": "Check the labelled tool in the machine against the last approved setup sheet before anyone edits the program.",
++        "rationale": "Check the sheet first so a wrong tool is not saved as a new program.",
++        "exceptions": [
++          "Stop and call Anja if the guard is open, the grade is not on the card, or the tool code does not match the sheet."
++        ],
++        "evidence": [
++          {
++            "sourceId": "S1",
++            "quote": "At Nordform, when a repeat customer part comes off the brake with the wrong angle, I check the labelled tool in the machine against the last approved setup sheet, and the material grade printed on the job card, before anyone edits the program. I check the sheet first so a wrong tool is not saved as a new program. If the guard is open, the grade is not on the card, or the tool code does not match the sheet, I stop and call Anja. I know it worked when the next part matches the angle on the approved sheet."
++          }
++        ]
++      },
++      {
++        "id": "R2",
++        "situation": "The tool and the material grade match the approved sheet, but the angle is still wrong",
++        "conditions": [
++          "The guard is closed. The program has not been edited during this run."
++        ],
++        "action": "Check whether the labelled back-gauge position on the sheet was actually set.",
++        "rationale": "Check the labelled gauge before changing the program, so a matching setup is not overwritten during the run.",
++        "exceptions": [
++          "Stop and call Anja if the gauge already matches the sheet. Do not change the program during the run."
++        ],
++        "evidence": [
++          {
++            "sourceId": "S2",
++            "quote": "If the tool and the material grade match the approved sheet but the angle is still wrong, I check whether the labelled back-gauge position on the sheet was actually set. I do not change the program during the run. If the gauge already matches the sheet, I stop and call Anja."
++          }
++        ]
++      }
++    ],
++    "question": "At Nordform, when the tool and the material grade match the approved sheet but the angle is still wrong, what do you check, why, and when do you stop or escalate?",
++    "scenarios": [
++      {
++        "id": "C1",
++        "title": "Wrong angle, tool code differs from the sheet",
++        "facts": [
++          "Part angle is wrong",
++          "Tool code differs from the approved setup sheet",
++          "Guard is closed",
++          "Material grade matches the job card"
++        ],
++        "options": [
++          {
++            "id": "C1-A",
++            "label": "Check the tool against the approved setup sheet"
++          },
++          {
++            "id": "C1-B",
++            "label": "Edit the bend program"
++          },
++          {
++            "id": "C1-C",
++            "label": "Wait for the next part"
++          }
++        ],
++        "correctOptionId": "C1-A",
++        "ruleId": null,
++        "approved": false
++      },
++      {
++        "id": "C2",
++        "title": "Tool and grade match, angle still wrong",
++        "facts": [
++          "Tool code matches the approved setup sheet",
++          "Material grade matches the job card",
++          "Part angle is still wrong",
++          "Guard is closed"
++        ],
++        "options": [
++          {
++            "id": "C2-A",
++            "label": "Edit the bend program"
++          },
++          {
++            "id": "C2-B",
++            "label": "Check the labelled back-gauge against the sheet"
++          },
++          {
++            "id": "C2-C",
++            "label": "Wait without checking"
++          }
++        ],
++        "correctOptionId": "C2-B",
++        "ruleId": null,
++        "approved": false
++      }
++    ]
++  }
+ };
+ 
+-export const scenarios = [
+-  ScenarioSchema.parse({
+-    id: "C1", title: "Presenter silent, receiver has no input",
+-    facts: ["Presenter silent", "Receiver has no input", "No hazard reported"],
+-    options: [
+-      { id: "C1-A", label: "Check visible microphone power/mute" },
+-      { id: "C1-B", label: "Check session agenda" },
+-      { id: "C1-C", label: "Wait without checking" },
+-    ], correctOptionId: "C1-A",
+-  }),
+-  ScenarioSchema.parse({
+-    id: "C2", title: "Receiver shows input, room silent",
+-    facts: ["Receiver shows input", "Room silent", "No hazard reported"],
+-    options: [
+-      { id: "C2-A", label: "Check session agenda" },
+-      { id: "C2-B", label: "Check labelled channel mute indicator" },
+-      { id: "C2-C", label: "Wait without checking" },
+-    ], correctOptionId: "C2-B",
+-  }),
+-];
+-
+-export function createInitialBundle(mode: SessionBundle["mode"] = "fixture"): SessionBundle {
+-  return SessionBundleSchema.parse({
+-    schemaVersion: 1, mode, sources: [{ ...sourceS1 }],
+-    draft: null, versions: [], attempts: [], gaps: [],
+-  });
+-}
+-
+-export function fixtureExtraction(sources: readonly SourceSegment[]) {
+-  if (sources.length !== 1 || sources[0].id !== "S1" || sources[0].text !== sourceS1.text) {
+-    throw new Error("Fixture replay supports only the unchanged S1 demo incident.");
+-  }
+-  return ExtractionResultSchema.parse({
+-    rules: [{
+-      id: "R1", situation: "Presenter cannot be heard and the receiver shows no input",
+-      conditions: ["Receiver shows no input"],
+-      action: "Check whether the handheld microphone is powered and unmuted.",
+-      rationale: "Check simple visible controls first so unrelated mixer settings are not changed.",
+-      exceptions: ["Stop and call the duty technician if there is a burning smell, damaged equipment, or an unidentified setup."],
+-      evidence: [{ sourceId: "S1", quote: sourceS1.text }],
+-    }], questions: [],
+-  });
++export function exampleDraft(capture:Capture):ExtractionResult {
++  if (!capture.datasetId) throw new Error("Choose an example first.");
++  const data = datasets[capture.datasetId];
++  const active = data.rules.filter(rule=>rule.evidence.every(e=>capture.sources.some(s=>s.id===e.sourceId && s.text===data.sources.find(x=>x.id===e.sourceId)?.text)));
++  if (!active.length) throw new Error("The example text changed. Use live extraction for your own material.");
++  return structuredClone({origin:"example",rules:active,questions:[data.question]});
+ }
+diff --git a/src/lib/session.ts b/src/lib/session.ts
+index 856f632..68a3aa2 100644
+--- a/src/lib/session.ts
++++ b/src/lib/session.ts
+@@ -1,68 +1,39 @@
+-import { ExtractionResultSchema, type ExtractionResult, type SessionBundle, type SourceSegment } from "./contracts";
+-import { createInitialBundle, sourceS1 } from "./demo";
++import type { Capture, DatasetId, ExtractionResult, Scenario, Workspace } from "./contracts";
++import { createCapture, installDraft, publishMemory } from "./memory";
+ 
+-export type View = "capture" | "review" | "practise";
+-export type PendingExtraction = { token: string; draftId: string | null; revision: number | null };
+-export type SessionState = {
+-  bundle: SessionBundle; view: View; hydration: "loading" | "ready";
+-  pending: PendingExtraction | null; expert: string; contentOwner: string;
+-  incident: string; questions: string[]; notice: string | null;
+-};
++export type Pending = {token:string;captureId:string;revision:number};
++export type SessionState = {workspace:Workspace;hydration:"loading"|"ready"|"recovery";pending:Pending|null;notice:string|null;temporary:boolean;testing:boolean};
+ export type SessionEvent =
+-  | { type: "hydrated" }
+-  | { type: "view"; view: View }
+-  | { type: "field"; field: "expert" | "contentOwner" | "incident"; value: string }
+-  | { type: "mode"; mode: SessionBundle["mode"] }
+-  | { type: "reset" }
+-  | { type: "extractionStarted"; token: string; sources: readonly SourceSegment[] }
+-  | { type: "extractionSucceeded"; token: string; draftId: string; result: ExtractionResult }
+-  | { type: "extractionFailed"; token: string; message: string };
+-
+-export function createSession(mode: SessionBundle["mode"] = "fixture"): SessionState {
+-  return {
+-    bundle: createInitialBundle(mode), view: "capture", hydration: "loading", pending: null,
+-    expert: "Alex", contentOwner: "Duty technician", incident: sourceS1.text, questions: [], notice: null,
+-  };
++ | {type:"hydrated";workspace:Workspace|null}|{type:"recovery"}|{type:"temporary"}
++ | {type:"capture";capture:Capture}|{type:"newCapture";datasetId:DatasetId|null}|{type:"reset"}
++ | {type:"begin";token:string}|{type:"draftResult";token:string;result:ExtractionResult}
++ | {type:"scenarioResult";token:string;scenarios:Scenario[]}|{type:"failed";token:string;message:string}
++ | {type:"notice";message:string|null}|{type:"testing";value:boolean}|{type:"publish";now:string};
++export function createSession():SessionState {
++ return {workspace:{schemaVersion:2,capture:createCapture(),publications:[]},hydration:"loading",pending:null,notice:null,temporary:false,testing:false};
+ }
+-
+-export function sessionReducer(state: SessionState, event: SessionEvent): SessionState {
+-  if (event.type === "hydrated") return { ...state, hydration: "ready" };
+-  if (state.hydration !== "ready") return state;
+-  switch (event.type) {
+-    case "view": return { ...state, view: event.view };
+-    case "field": return { ...state, [event.field]: event.value };
+-    case "mode": return { ...createSession(event.mode), hydration: "ready" };
+-    case "reset": return { ...createSession(state.bundle.mode), hydration: "ready" };
+-    case "extractionStarted": {
+-      if (state.pending) return state;
+-      const sources = [...state.bundle.sources];
+-      for (const source of event.sources) {
+-        const existing = sources.find(s => s.id === source.id);
+-        if (existing && (existing.text !== source.text || existing.author !== source.author)) {
+-          return { ...state, notice: "Submitted sources cannot be changed. Use a new source ID." };
+-        }
+-        if (!existing) sources.push({ ...source });
+-      }
+-      return {
+-        ...state, notice: null, bundle: { ...state.bundle, sources },
+-        pending: { token: event.token, draftId: state.bundle.draft?.id ?? null, revision: state.bundle.draft?.revision ?? null },
+-      };
+-    }
+-    case "extractionSucceeded": {
+-      if (!state.pending || state.pending.token !== event.token) return state;
+-      if (state.pending.draftId !== (state.bundle.draft?.id ?? null) || state.pending.revision !== (state.bundle.draft?.revision ?? null)) {
+-        return { ...state, pending: null, notice: "Newer edits were kept. Extract a fresh draft." };
+-      }
+-      const result = ExtractionResultSchema.parse(event.result);
+-      return {
+-        ...state, pending: null, view: "review", questions: result.questions,
+-        bundle: { ...state.bundle, draft: {
+-          id: event.draftId, revision: 0, baseVersion: state.bundle.versions.at(-1)?.version ?? 0,
+-          rules: result.rules, approvedRuleIds: [], caseLinks: [],
+-        } },
+-      };
+-    }
+-    case "extractionFailed": return state.pending?.token === event.token
+-      ? { ...state, pending: null, notice: event.message } : state;
++function current(s:SessionState,token:string) {
++ return s.pending?.token===token&&s.pending.captureId===s.workspace.capture.id&&s.pending.revision===s.workspace.capture.revision;
++}
++export function sessionReducer(state:SessionState,event:SessionEvent):SessionState {
++ if(event.type==="hydrated")return {...state,workspace:event.workspace??state.workspace,hydration:"ready"};
++ if(event.type==="recovery")return {...state,hydration:"recovery"};
++ if(event.type==="reset")return state.hydration==="loading"?state:{...createSession(),hydration:"ready"};
++ if(state.hydration!=="ready")return state;
++ switch(event.type){
++  case "temporary":return {...state,temporary:true};
++  case "capture":return event.capture.id===state.workspace.capture.id?{...state,workspace:{...state.workspace,capture:event.capture},pending:null,notice:null}:state;
++  case "newCapture":return {...state,workspace:{...state.workspace,capture:createCapture(event.datasetId)},pending:null,testing:false,notice:null};
++  case "begin":return state.pending?state:{...state,pending:{token:event.token,captureId:state.workspace.capture.id,revision:state.workspace.capture.revision},notice:null};
++  case "draftResult":return current(state,event.token)?{...state,workspace:{...state.workspace,capture:installDraft(state.workspace.capture,event.result)},pending:null}:state;
++  case "scenarioResult":return current(state,event.token)?{...state,workspace:{...state.workspace,capture:{...state.workspace.capture,revision:state.workspace.capture.revision+1,scenarios:event.scenarios}},pending:null}:state;
++  case "failed":return state.pending?.token===event.token?{...state,pending:null,notice:event.message}:state;
++  case "notice":return {...state,notice:event.message};
++  case "testing":return {...state,testing:event.value};
++  case "publish": {
++   if(state.workspace.publications.some(p=>p.captureId===state.workspace.capture.id&&p.revision===state.workspace.capture.revision))return {...state,notice:"This revision is already published."};
++   try{return {...state,workspace:{...state.workspace,publications:[...state.workspace.publications,publishMemory(state.workspace.capture,state.workspace.publications,event.now)]},notice:"Your memory is published."};}
++   catch(error){return {...state,notice:error instanceof Error?error.message:"Publication unavailable."};}
+   }
++ }
+ }
+diff --git a/tests/shell.test.ts b/tests/shell.test.ts
+deleted file mode 100644
+index 87faff2..0000000
+--- a/tests/shell.test.ts
++++ /dev/null
+@@ -1,84 +0,0 @@
+-import { describe, expect, it } from "vitest";
+-import { RuleSchema, SessionBundleSchema } from "../src/lib/contracts";
+-import { createInitialBundle, scenarios, sourceS1, fixtureExtraction } from "../src/lib/demo";
+-import { createSession, sessionReducer } from "../src/lib/session";
+-
+-describe("W1 contract and fixture boundary", () => {
+-  it("starts without publishable or learner history and without S2", () => {
+-    const bundle = SessionBundleSchema.parse(createInitialBundle());
+-    expect(bundle.sources.map(source => source.id)).toEqual(["S1"]);
+-    expect(bundle.draft).toBeNull();
+-    expect(bundle.versions).toEqual([]);
+-    expect(bundle.attempts).toEqual([]);
+-    expect(bundle.gaps).toEqual([]);
+-  });
+-
+-  it("returns independent initial state on reset", () => {
+-    const first = createInitialBundle();
+-    first.sources[0].text = "changed";
+-    expect(createInitialBundle().sources[0].text).toBe(sourceS1.text);
+-  });
+-
+-  it("rejects empty actions and evidence", () => {
+-    const rule = fixtureExtraction([sourceS1]).rules[0];
+-    expect(RuleSchema.safeParse({ ...rule, action: " " }).success).toBe(false);
+-    expect(RuleSchema.safeParse({ ...rule, evidence: [] }).success).toBe(false);
+-    expect(RuleSchema.safeParse({ ...rule, evidence: [{ sourceId: "S1", quote: "" }] }).success).toBe(false);
+-  });
+-
+-  it("keeps the fixed choices aligned with their supported answers", () => {
+-    expect(scenarios.map(s => [s.id, s.options.map(o => o.id), s.correctOptionId])).toEqual([
+-      ["C1", ["C1-A", "C1-B", "C1-C"], "C1-A"],
+-      ["C2", ["C2-A", "C2-B", "C2-C"], "C2-B"],
+-    ]);
+-  });
+-
+-  it("only adapts the known source, never claims to extract novel text", () => {
+-    const result = fixtureExtraction([sourceS1]);
+-    expect(result.rules[0].evidence.every(e => e.sourceId === "S1" && sourceS1.text.includes(e.quote))).toBe(true);
+-    expect(() => fixtureExtraction([{ ...sourceS1, text: "novel notes" }])).toThrow();
+-  });
+-});
+-
+-describe("shell transitions", () => {
+-  it("keeps navigation and hydration outside the persisted bundle", () => {
+-    const state = sessionReducer(createSession(), { type: "hydrated" });
+-    const next = sessionReducer(state, { type: "view", view: "review" });
+-    expect(next.view).toBe("review");
+-    expect(next.hydration).toBe("ready");
+-    expect(SessionBundleSchema.parse(next.bundle)).toEqual(state.bundle);
+-    expect("pending" in next.bundle).toBe(false);
+-  });
+-
+-  it("blocks extraction until hydration, and never adds approvals from a result", () => {
+-    const request = { type: "extractionStarted", token: "first", sources: [sourceS1] } as const;
+-    expect(sessionReducer(createSession(), request).pending).toBeNull();
+-    let state = sessionReducer(createSession(), { type: "hydrated" });
+-    state = sessionReducer(state, request);
+-    state = sessionReducer(state, { type: "extractionSucceeded", token: "first", draftId: "draft-1", result: fixtureExtraction([sourceS1]) });
+-    expect(state.bundle.draft?.approvedRuleIds).toEqual([]);
+-    expect(state.bundle.draft?.caseLinks).toEqual([]);
+-    expect(state.bundle.versions).toEqual([]);
+-    expect(state.view).toBe("review");
+-  });
+-
+-  it("invalidates a pending response on reset", () => {
+-    let state = sessionReducer(createSession(), { type: "hydrated" });
+-    state = sessionReducer(state, { type: "extractionStarted", token: "old", sources: [sourceS1] });
+-    state = sessionReducer(state, { type: "reset" });
+-    state = sessionReducer(state, { type: "extractionSucceeded", token: "old", draftId: "late", result: fixtureExtraction([sourceS1]) });
+-    expect(state.bundle.draft).toBeNull();
+-    expect(state.pending).toBeNull();
+-    expect(state.view).toBe("capture");
+-  });
+-
+-  it("switches modes with a fresh bundle instead of mixing fixture history", () => {
+-    let state = sessionReducer(createSession(), { type: "hydrated" });
+-    state = sessionReducer(state, { type: "extractionStarted", token: "fixture", sources: [sourceS1] });
+-    state = sessionReducer(state, { type: "mode", mode: "live" });
+-    expect(state.bundle.mode).toBe("live");
+-    expect(state.bundle.draft).toBeNull();
+-    expect(state.pending).toBeNull();
+-    expect(state.bundle.sources.map(s => s.id)).toEqual(["S1"]);
+-  });
+-});

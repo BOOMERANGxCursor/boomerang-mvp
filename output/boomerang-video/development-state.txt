@@ -1,0 +1,40 @@
+ M .env.example
+ M ARCHITECTURE.md
+ M CONTEXT.md
+ M DESIGN.md
+ M PRD/PLAN.md
+ M PRD/SPEC.md
+ M README.md
+ M doc/demo-cases/README.md
+ M docs/pitch.md
+ M src/app/globals.css
+ M src/app/layout.tsx
+ M src/app/page.tsx
+ D src/components/Capture.tsx
+ D src/components/Practise.tsx
+ D src/components/Review.tsx
+ M src/lib/contracts.ts
+ M src/lib/demo.ts
+ M src/lib/session.ts
+ D tests/shell.test.ts
+?? PRD/EXPERT-CAPTURE-DESIGN.md
+?? PRD/EXPERT-CAPTURE-PLAN.md
+?? src/app/api/
+?? src/components/ConfirmStep.tsx
+?? src/components/FinishStep.tsx
+?? src/components/Icon.tsx
+?? src/components/ProfileStep.tsx
+?? src/components/QuestionsStep.tsx
+?? src/components/SnippetReview.tsx
+?? src/components/TestRun.tsx
+?? src/components/UploadStep.tsx
+?? src/lib/media-metadata.ts
+?? src/lib/memory.ts
+?? src/lib/server.ts
+?? src/lib/storage.ts
+?? src/lib/uploads.ts
+?? tests/media.test.ts
+?? tests/memory.test.ts
+?? tests/server.test.ts
+?? tests/storage.test.ts
+?? tests/uploads.test.ts

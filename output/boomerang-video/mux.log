@@ -1,0 +1,50 @@
+ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers
+  built with Apple clang version 13.1.6 (clang-1316.0.21.2.5)
+  configuration: --prefix=/Volumes/tempdisk/sw --extra-cflags=-fno-stack-check --arch=arm64 --cc=/usr/bin/clang --enable-gpl --enable-libvmaf --enable-libopenjpeg --enable-libopus --enable-libmp3lame --enable-libx264 --enable-libx265 --enable-libvpx --enable-libwebp --enable-libass --enable-libfreetype --enable-fontconfig --enable-libtheora --enable-libvorbis --enable-libsnappy --enable-libaom --enable-libvidstab --enable-libzimg --enable-libsvtav1 --enable-libharfbuzz --enable-libkvazaar --pkg-config-flags=--static --enable-ffplay --enable-postproc --enable-neon --enable-runtime-cpudetect --disable-indev=qtkit --disable-indev=x11grab_xcb
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.100 / 61. 19.100
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from '/Users/star/Workspace/boomerang-mvp/output/boomerang-video/video-silent.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf61.7.100
+  Duration: 00:01:23.00, start: 0.000000, bitrate: 433 kb/s
+  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1080x1920, 430 kb/s, 30 fps, 30 tbr, 15360 tbn (default)
+      Metadata:
+        handler_name    : VideoHandler
+        vendor_id       : [0][0][0][0]
+        encoder         : Lavc61.19.100 libx264
+[aist#1:0/pcm_s16le @ 0x124e06250] Guessed Channel Layout: mono
+Input #1, wav, from '/Users/star/Workspace/boomerang-mvp/output/boomerang-video/original-sound.wav':
+  Duration: 00:01:23.00, bitrate: 384 kb/s
+  Stream #1:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 24000 Hz, mono, s16, 384 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (copy)
+  Stream #1:0 -> #0:1 (pcm_s16le (native) -> aac (native))
+Press [q] to stop, [?] for help
+[aac @ 0x134f06760] Too many bits 6826.666667 > 6144 per frame requested, clamping to max
+Output #0, mp4, to '/Users/star/Workspace/boomerang-mvp/output/boomerang-video/BOOMERANG_Product_Demo_90s.mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomiso2avc1mp41
+    encoder         : Lavf61.7.100
+  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1080x1920, q=2-31, 430 kb/s, 30 fps, 30 tbr, 15360 tbn (default)
+      Metadata:
+        handler_name    : VideoHandler
+        vendor_id       : [0][0][0][0]
+        encoder         : Lavc61.19.100 libx264
+  Stream #0:1: Audio: aac (LC) (mp4a / 0x6134706D), 24000 Hz, mono, fltp, 144 kb/s
+      Metadata:
+        encoder         : Lavc61.19.100 aac
+frame= 1620 fps=0.0 q=-1.0 size=    2560KiB time=00:00:54.01 bitrate= 388.3kbits/s speed= 107x    [mp4 @ 0x134f048d0] Starting second pass: moving the moov atom to the beginning of the file
+[out#0/mp4 @ 0x134f04810] video:4364KiB audio:821KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 1.222911%
+frame= 2490 fps=0.0 q=-1.0 Lsize=    5249KiB time=00:01:22.93 bitrate= 518.4kbits/s speed= 107x    
+[aac @ 0x134f06760] Qavg: 65441.453

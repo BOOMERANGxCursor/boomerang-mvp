@@ -1,21 +1,10 @@
-# Demo cases
+# Example datasets
 
-Fictional training text for later entry into the MVP forms. These write-ups are not customer evidence and they do not replace the coded Demo Hall fixture in [src/lib/demo.ts](../../src/lib/demo.ts). The built-in Capture example, practice cases and gap question stay the microphone handover in [PRD/SPEC.md](../../PRD/SPEC.md#5-demo-content).
+These fictional cases can now be selected from **Try an example** in the guided MVP. They are not customer evidence or live AI output. The prepared source and draft are labelled; every snippet, expert answer and scenario applicability link still requires human approval.
 
-Each case is one English file. Paste a labelled block into the matching screen when the forms accept free text. The current build still replays only the unchanged Demo Hall S1 incident.
+- [Keller Elektro](keller-elektro/case.md): Marta Keller, master electrician; continuing owner Jonas Keller.
+- [Nordform GmbH](nordform/case.md): Helmut Kruse, press-brake setter; continuing owner Anja Berger.
 
-| Block in the case file | Screen | Field |
-| --- | --- | --- |
-| Expert name | Capture | Expert name |
-| Continuing content owner | Capture | Continuing content owner |
-| S1 incident notes | Capture | Incident notes |
-| Expected review card | Review | Situation, conditions, action, why, when to stop |
-| C1 | Practise | Covered case: facts and three options |
-| G1 question | Capture | Expert question opened from the uncovered case |
-| S2 reply | Capture | Reply entered for that open question |
-| C2 | Practise | Second case, covered only after S2 is reviewed and published |
+The implementation in [src/lib/demo.ts](../../src/lib/demo.ts) follows these human-authored case documents. Only S1 starts active. S2 is offered as a prepared expert reply when the follow-up question is opened; its answer is saved and explicitly reviewed before becoming memory. C1/C2 carry no automatic source link or approval. Test choices remain hidden for uncovered scenarios, regardless of the fixture answer key.
 
-The expected review cards are human-authored targets for the reviewer. They are not model output.
-
-- [Keller Elektro](keller-elektro/case.md) — six-person electrical craft business. The master electrician retires.
-- [Nordform GmbH](nordform/case.md) — sheet-metal workshop of about 40 people. The press-brake setter retires.
+Choose **Your own knowledge** for an empty capture. Adding/editing personal material replaces the example context with explicit confirmation, so fixtures cannot masquerade as live extraction. The normal start contains no Demo Hall roleplay.

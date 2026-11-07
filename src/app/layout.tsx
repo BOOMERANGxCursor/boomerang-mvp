@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "BOOMERANG — Experience does not retire",
-  description: "A fictional handover and practice demonstration.",
+  description: "Capture experience, review knowledge, and build a memory worth passing on.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

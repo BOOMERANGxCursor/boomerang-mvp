@@ -11,9 +11,9 @@
 
 [AGENTS.md](AGENTS.md) governs agent work. [CONTEXT.md](CONTEXT.md) records decisions and actual status.
 
-## Run the Task 1 shell
+## Run the guided MVP
 
-Use Node **24.22.2** (`.nvmrc`) and Bun **1.4.3** (`packageManager`). Next.js runs on Node; Bun installs dependencies and invokes scripts. The default system Node may need switching before running these commands.
+Work in `/Users/star/Workspace/boomerang-mvp`. Use Node **24.22.2** (`.nvmrc`) and Bun **1.4.3** (`packageManager`). Next.js runs on Node; Bun installs dependencies and invokes scripts.
 
 ```sh
 bun install --frozen-lockfile
@@ -24,9 +24,25 @@ bun run build
 bun run start
 ```
 
-Open [the local demo](http://localhost:3000). Capture, Review and Practise are available from the header. The initial bundle has only S1, with no draft, publication, attempt or gap. **Fixture replay** is the default; **Extract fixture draft** shows an unapproved S1 preview. Editing the fixture text produces an explicit error; it does not run AI on new text.
+Open [the local app](http://localhost:3000). Start with an empty profile or choose Keller Elektro / Nordform GmbH from **Try an example**. No roleplay identity or Practise tab is imposed on the expert.
 
-Review approval/publication, practice evaluation, gap handling and browser persistence belong to subsequent tasks. Practice is disabled. This build uses memory only and says so visibly; reload clears it. Session settings offers Reset demo (with confirmation) and mode selection; mode changes start a clean session so fixture history cannot enter Live AI mode. Live extraction is unavailable in this build. No deployment is claimed.
+The flow is Profile → Add knowledge → Review snippets → Confirm corrections / previous memory → Expert questions → Ready to share. Green check approves the exact snippet revision; red cross opens correction. Saved corrections receive a second review. Expert answers are saved for review, then explicitly approved as memory. Unanswered questions remain owned and visible.
+
+The final step reviews scenario facts, choices, correct answers and source links. **Run a manual test** opens the separate answer-choice test; uncovered cases never show a guessed answer. Publish requires a current correct test and approved content. Published memories and old test snapshots remain unchanged when the draft changes.
+
+The workspace is validated and saved in localStorage (`boomerang.workspace.v2`) after hydration. Prior captures match organization, position and example/live context on this device. Start a new memory preserves published history; Reset workspace removes this local workspace after confirmation. Invalid storage opens recovery without overwriting saved content. Raw files, access codes and provider credentials are never saved in the bundle.
+
+### Sources and live processing
+
+Text files (TXT/MD/CSV/SRT/VTT) are read locally. PDF/DOCX and JPEG/PNG/WebP files use the pinned OpenAI model to obtain readable text; MP3/WAV/M4A/OGG/WebM audio and MP4/WebM video use ElevenLabs `scribe_v2` for speech only. Inspect/correct readable text before extracting skills. Sources are immutable; a correction creates a new source. Unsupported, unreadable or unconfigured processing produces a visible error and retains completed work.
+
+Limits: six active sources, 10,000 source characters per extraction, 4 MB per file and recordings up to 60 seconds. Recording duration must be readable from container metadata on the server; streaming files with unverifiable duration need exporting or a pasted transcript. Large/long files are rejected rather than silently truncated.
+
+The two examples use explicitly labelled, human-authored prepared drafts. Adding personal files/notes or editing example text requires replacing the prepared example context; live extraction never inherits example scenarios or an example label. Human approval remains required in both paths.
+
+Set `OPENAI_API_KEY`, `DEMO_ACCESS_CODE`, and `ELEVENLABS_API_KEY` in `.env.local` using `.env.example`, then restart the server. Enter only the demo access code in **Connection settings**; it stays in memory. Keys stay server-side. Live endpoints are `/api/read`, `/api/extract`, `/api/scenarios`, with access checks, bounded input, sanitized errors and explicit retries.
+
+Current limitation: real provider/media smoke tests remain **blocked by missing credentials**. Domain/adapter tests and the labelled example loop are verified; live AI accuracy, handwriting recognition and provider access are not claimed. No deployment, shared accounts or cross-device storage is claimed.
 
 ### Exact bootstrap versions
 
@@ -52,7 +68,7 @@ Copy `.env.example` to `.env.local` and configure `OPENAI_API_KEY` and `DEMO_ACC
 bun run smoke:model
 ```
 
-This standalone script uses only the fixed `gpt-5.4-mini-2026-03-17` snapshot, Responses structured output, `store: false`, reasoning effort `none`, zero retries and a 20-second timeout. It validates exact source quotes from fictional text without printing provider responses or credentials. It does not publish anything or substitute a model. The initial run is **blocked: neither required server variable is configured**. Provider access is not proven.
+This standalone script uses only the fixed `gpt-5.4-mini-2026-03-17` snapshot, Responses structured output, `store: false`, reasoning effort `none`, zero retries and a 20-second timeout. It validates exact source quotes from fictional text without printing provider responses or credentials. It does not publish anything or substitute a model. The current run is **blocked: the required server variables are not configured**. Provider access is not proven.
 
 Working notes: [customer evidence](docs/customer-evidence.md), [pitch](docs/pitch.md), [submission](docs/submission.md). These contain no claimed conversations or completed submission artifacts.
 

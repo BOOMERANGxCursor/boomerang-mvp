@@ -1,5 +1,9 @@
 # BOOMERANG — Build plan
 
+Current execution plan: [EXPERT-CAPTURE-PLAN.md](EXPERT-CAPTURE-PLAN.md), approved guided redesign A003. The user instructed implementation on 7 November 2026. The original Task 1 shell is the starting point, not the final MVP. No commits or pushes unless requested.
+
+# Original build plan — historical baseline
+
 Version 1.2.0 · Three people · Finish including pitch by 17:00, 7 November 2026, Europe/Berlin.
 
 **Goal:** demonstrate capture → review → publish → practise → gap → expert reply → publish update → retry.

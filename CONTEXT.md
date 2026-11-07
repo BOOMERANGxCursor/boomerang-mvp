@@ -7,7 +7,7 @@ Baseline 1.2.0 · 7 November 2026 · Europe/Berlin
 - Team BOOMERANG; slogan: “Experience does not retire.”
 - Three people: frontend, backend, product/pitch.
 - Finish the product demonstration and pitch deliverables by 17:00 today.
-- Retain the existing draft's fictional event-operations case and text-first scope.
+- Use the approved guided expert workflow, opt-in business examples and speech-only video processing.
 - This checkout is the actual MVP repository at `/Users/star/Workspace/boomerang-mvp`. Task 1 was initially built in the planning checkout by mistake, then copied here at the user’s request.
 
 ## Current decisions
@@ -20,13 +20,28 @@ Baseline 1.2.0 · 7 November 2026 · Europe/Berlin
 
 ## Status and next action
 
-Task 1 / W1 software gate passed with provider access explicitly blocked. The application now has exact dependency pins and `bun.lock`, Zod-derived shared contracts, S1-only initial state, fixed C1/C2 scenarios, a pure session reducer and Capture/Review/Practise views. Pending extraction context and hydration live outside the bundle. The labelled S1 fixture adapter creates only an unapproved preview; S2 is separate and inactive. Practice stays disabled before publication.
+The user approved and requested implementation of [the guided design](PRD/EXPERT-CAPTURE-DESIGN.md). The implementation is in this MVP checkout, using the unchanged exact Bun stack. [PRD/EXPERT-CAPTURE-PLAN.md](PRD/EXPERT-CAPTURE-PLAN.md) records the build slices.
 
-Runtime verification used Node 24.22.2 and Bun 1.4.3; the system default Node is 26, so Node 24 was installed in a temporary tool directory for checks. Exact dependency versions and setup are in [README.md](README.md#exact-bootstrap-versions). Generated files remain uncommitted, as requested by the repository's commit policy.
+Implemented: empty expert profile; opt-in Keller Elektro/Nordform examples; six-step guided capture; source upload/paste/readable-text correction; snippet approval/correction/second review/exclusion/addition; same-role predecessor comparison; expert answer review/acceptance; scenario authoring/proposals and explicit applicability approval; separate final manual test; immutable publication; validated v2 localStorage restoration/recovery/reset. No top-level Practise tab or default roleplay remains.
 
-`bun run smoke:model` exited 1 with an explicit configuration blocker: neither `OPENAI_API_KEY` nor `DEMO_ACCESS_CODE` is configured. No provider request was made; model access and valid live output remain unproven. The repeatable server-side probe uses the fixed snapshot and validates exact source evidence when configured. No provider/model substitution was made.
+Text uploads are read locally. Server read/extraction/scenario routes are implemented using the pinned OpenAI SDK/model and ElevenLabs HTTP Scribe v2. Video is spoken-content-only, as selected by the user. Files/requests/duration/evidence are validated. Live work cannot silently inherit example fixtures or labels.
 
-The [customer evidence](docs/customer-evidence.md), [pitch](docs/pitch.md) and [submission](docs/submission.md) working files are open. Fictional paste-ready handover write-ups for a craft business and a Mittelstand workshop are in [doc/demo-cases](doc/demo-cases/README.md); the coded demo remains Demo Hall. No conversations, deployment or submitted artifacts are claimed. Next: configure server credentials and run the probe, then implement Task 2's protected extraction path. Publication, practice evaluation, gap closure and persistence remain Tasks 3–5. This shell is explicitly temporary and does not read or write localStorage.
+Provider smoke tests remain blocked: `OPENAI_API_KEY`, `DEMO_ACCESS_CODE` and `ELEVENLABS_API_KEY` are not configured. A real local request returned sanitized 503 NOT_CONFIGURED with no provider call; a browser extraction attempt kept its uploaded source. No successful live-media or model call is claimed. Next operational step: configure these server variables, restart, enter the demo access code in Connection settings, and run the live model/media checks with fictional data.
+
+All source changes remain uncommitted and unpushed. No deployment or submission is claimed. See the validation record below for actual checks; the old Task 1 record is historical.
+
+## Guided version validation
+
+- 38 domain/storage/provider/upload/media tests pass; new behavior tests were added before implementation, including regressions for review findings. Typecheck passes under Node 24.22.2 / Bun 1.4.3.
+- Fresh independent review found example/live provenance, predecessor coverage invalidation, stale predecessor selections, server duration verification, question context and error-classification issues. These were corrected; affected/full tests passed. Historical attempts now snapshot their exact scenario and guidance; same-capture publication increments history correctly.
+- Browser: empty required-field errors; Keller correction → second approval → prepared reply → answer review/approval → scenario approval → test selection validation → correct feedback → publish → reload. Uncovered C2 hid all choices and created an expert question. Nordform loaded its own profile/source/draft without Keller content.
+- Mobile at 390×844: review controls, settings and source upload fit the viewport. A real UTF-8 text file was selected through Browse files and appeared as a readable source; live extraction displayed missing configuration and retained it.
+- Final production preview is running from this MVP checkout at `http://localhost:3000`; desktop (1440×1000) and mobile (390×844) profiles were visually inspected. Screenshot artifacts: `/private/tmp/boomerang-new-desktop.png`, `/private/tmp/boomerang-new-mobile.png`.
+- Mechanical design detector returned no findings. Production build passed with all three API routes; frozen install left the lockfile unchanged. Links and anchors across 15 documents and `git diff --check` passed. Reset returned the test workspace to an empty profile. The model smoke command exited 1 with an explicit missing-configuration blocker; no provider call was made.
+
+## Product demo video
+
+Created [the 83-second vertical MP4](output/boomerang-video/BOOMERANG_Product_Demo_90s.mp4) from actual browser captures of the fictional Keller Elektro dataset. It shows review, human approval, a manual test, an uncovered case, an expert answer and successful retesting. The team network is labelled Product vision. Export: 1080×1920, H.264, 30 fps, AAC original synthesized audio; full FFmpeg decode passed. Editable renderer, timing, captures and thumbnail are in the same output directory. No upload or submission is claimed. Application code was preserved; live provider configuration remains the next development blocker described above.
 
 ## Customer evidence
 

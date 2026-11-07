@@ -1,0 +1,107 @@
+[
+  {
+    "start": 0,
+    "end": 7,
+    "kind": "intro",
+    "eyebrow": "BOOMERANG",
+    "title": "Knowledge\ncomes back.",
+    "subtitle": "Turn practical know-how into\nknowledge your team can trust."
+  },
+  {
+    "start": 7,
+    "end": 15,
+    "asset": "01-profile.png",
+    "eyebrow": "01 / CAPTURE EXPERIENCE",
+    "title": "Start with\nthe expert.",
+    "subtitle": "A profile. A role. A world of experience."
+  },
+  {
+    "start": 15,
+    "end": 23,
+    "asset": "02-sources.png",
+    "eyebrow": "CAPTURE EXPERIENCE",
+    "title": "Keep the\npractical details.",
+    "subtitle": "Notes, files, practical know-how."
+  },
+  {
+    "start": 23,
+    "end": 31,
+    "asset": "03-review.png",
+    "eyebrow": "02 / STRUCTURE & VERIFY",
+    "title": "Make knowledge\nreviewable.",
+    "subtitle": "Review the rules. Keep the sources close."
+  },
+  {
+    "start": 31,
+    "end": 39,
+    "asset": "04-approved.png",
+    "eyebrow": "HUMAN APPROVAL",
+    "title": "The expert\nhas the last word.",
+    "subtitle": "Approve, correct, or ask a question."
+  },
+  {
+    "start": 39,
+    "end": 43,
+    "asset": "05-test.png",
+    "eyebrow": "03 / TEST IN PRACTICE",
+    "title": "Try a real\nsituation.",
+    "subtitle": "Test a scenario against approved knowledge."
+  },
+  {
+    "start": 43,
+    "end": 47,
+    "asset": "06-correct.png",
+    "eyebrow": "LEARN FROM THE RESULT",
+    "title": "Check what\nholds up.",
+    "subtitle": "Review the answer and its evidence."
+  },
+  {
+    "start": 47,
+    "end": 55,
+    "kind": "network",
+    "eyebrow": "PRODUCT VISION",
+    "title": "One expert.\nA stronger team.",
+    "subtitle": "Practical knowledge, ready to travel."
+  },
+  {
+    "start": 55,
+    "end": 62,
+    "asset": "07-gap.png",
+    "eyebrow": "04 / CLOSE THE GAP",
+    "title": "Find what's\nmissing.",
+    "subtitle": "A question becomes a knowledge gap."
+  },
+  {
+    "start": 62,
+    "end": 69,
+    "asset": "08-answer.png",
+    "eyebrow": "ASK THE EXPERT",
+    "title": "Bring experience\nback into the loop.",
+    "subtitle": "Capture the missing answer."
+  },
+  {
+    "start": 69,
+    "end": 73,
+    "asset": "09-answer-approved.png",
+    "eyebrow": "VERIFY THE UPDATE",
+    "title": "Close the loop.\nKeep the learning.",
+    "subtitle": "Review and approve the new knowledge."
+  },
+  {
+    "start": 73,
+    "end": 78,
+    "asset": "11-gap-retest-correct.png",
+    "eyebrow": "TEST THE UPDATED KNOWLEDGE",
+    "title": "The gap becomes\na correct next step.",
+    "subtitle": "Retest the same situation with the verified answer."
+  },
+  {
+    "start": 78,
+    "end": 83,
+    "asset": "10-ready.png",
+    "kind": "outro",
+    "eyebrow": "KNOWLEDGE UPDATED",
+    "title": "The knowledge\nkeeps growing.",
+    "subtitle": "The verified answer becomes a memory snippet."
+  }
+]
